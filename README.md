@@ -40,11 +40,11 @@ To streamline the workflow, a new script (e.g., Workflow.py) has been introduced
 
  1. Using the New Script:
     
-        python unified_script.py -i <input_pcap> -ip <tsv_file> -l <label_file> -o
+        python workflow.py -i <input_pcap> -ip <tsv_file> -l <label_file> -o
     
     or, if you have a saved RMSE file:
     
-        python unified_script.py -r <saved_RMSE> -ip <tsv_file> -l <label_file> -b
+        python workflow.py -r <saved_RMSE> -ip <tsv_file> -l <label_file> -b
  2. Reverting to the Original Workflow:
     
 	- Modify the file paths directly in example.py and results.py as  needed.
@@ -65,5 +65,5 @@ To streamline the workflow, a new script (e.g., Workflow.py) has been introduced
 
 ## Dataset
 
-The dataset required for running this repository can be found here. Please ensure to download and organize the dataset properly before running the scripts. 
+The dataset required to run this repository can be found [here](https://goo.gl/iShM7E). Please ensure to download and organize the dataset properly before running the scripts. 
 
