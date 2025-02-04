@@ -46,8 +46,8 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 if __name__ == '__main__':
     # Argument parser for command-line flexibility
     parser = argparse.ArgumentParser(description="Adversarial IP Detection")
-    parser.add_argument('-i', '--input_pcap', help="Input PCAP file for evaluation")
-    parser.add_argument('-ip', '--IPfile', help="TSV file with IP data", required=True)
+    parser.add_argument('-i', '--input_pcap', help="Input PCAP file for evaluation", required=True)
+    parser.add_argument('-ip', '--IPfile', help="TSV file with IP data") #pcap to tsv can be converted pcap2tsv function
     parser.add_argument('-l', '--labelfile', help="CSV file with labels", required=True)
     parser.add_argument('-r', '--saved_RMSE', help="Path to a saved RMSE file (if not running evaluation)")
     
