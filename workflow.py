@@ -28,6 +28,10 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 
     # Build IP lists and labels
     print("Building IP lists and labels...")
+    if IPfile is None:
+        IPfile = f"{input_pcap}.tsv"
+        if not os.path.exists(IPfile):
+            raise FileNotFoundError(f"Generated TSV file {IPfile} not found. Please ensure the conversion step was successful.")
     IPs, IPd = build_IP_list(IPfile)
     LABELS = build_label_list(filename=labelfile)
 
@@ -46,7 +50,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 if __name__ == '__main__':
     # Argument parser for command-line flexibility
     parser = argparse.ArgumentParser(description="Adversarial IP Detection")
-    parser.add_argument('-i', '--input_pcap', help="Input PCAP file for evaluation", required=True)
+    parser.add_argument('-i', '--input_pcap', help="Input PCAP file for evaluation")
     parser.add_argument('-ip', '--IPfile', help="TSV file with IP data") #pcap to tsv can be converted pcap2tsv function
     parser.add_argument('-l', '--labelfile', help="CSV file with labels", required=True)
     parser.add_argument('-r', '--saved_RMSE', help="Path to a saved RMSE file (if not running evaluation)")
