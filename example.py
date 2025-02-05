@@ -177,13 +177,12 @@ def evaluate(path = "mirai.pcap.tsv",
 
 
 
+if __name__ == '__main__':
+    with cProfile.Profile() as pr:
+        evaluate()
 
-with cProfile.Profile() as pr:
-    evaluate()
-
-stats = pstats.Stats(pr)
-stats.sort_stats(pstats.SortKey.TIME)
-stats.print_stats()
-stats.dump_stats(filename='profiling.prof')  # cprofilev -f .\profiling.prof
-
-pdb.set_trace()
+    stats = pstats.Stats(pr)
+    stats.sort_stats(pstats.SortKey.TIME)
+    stats.print_stats()
+    stats.dump_stats(filename='profiling.prof')  # cprofilev -f .\profiling.prof
+    pdb.set_trace()
