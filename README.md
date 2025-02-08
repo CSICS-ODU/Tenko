@@ -65,5 +65,5 @@ To streamline the workflow, a new script (e.g., Workflow.py) has been introduced
 
 ## Dataset
 
-The dataset required to run this repository can be found [here](https://goo.gl/iShM7E). Please ensure to download and organize the dataset properly before running the scripts. 
+The dataset required to run this repository can be found [here]([https://goo.gl/iShM7E](https://www.kaggle.com/datasets/ymirsky/network-attack-dataset-kitsune)). Please ensure to download and organize the dataset properly before running the scripts. 
 
