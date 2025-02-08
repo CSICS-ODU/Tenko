@@ -95,9 +95,9 @@ class dA:
         torch.manual_seed(42)
         self.criterion = RMSELoss() # root mean square error loss
         
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.params.learning_rate, weight_decay=1e-5) 
+        # self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.params.learning_rate, weight_decay=1e-5) 
         # print('Adam')
-        # self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.params.learning_rate) 
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=self.params.learning_rate) 
 
         self.model.train()
 
