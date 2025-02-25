@@ -94,7 +94,7 @@ def build_label_list(filename='OS_Scan_labels.csv'):
 
 
 
-def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 50, blockchainMode ='offline', saveFile= 'results.csv'):
+def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 50, blockchainMode ='offline', saveFile= 'results.csv',n_window=100000, quantile=0.5, rolling_window_size=500, smoothing_factor=0.9):
 
 	benignLimit=100000
 	FMgrace = 5000
@@ -109,6 +109,7 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 	train_max = max(benignSample)
 
 	threshold = train_max+3*std
+	print(threshold)
 
 	# mean = np.mean(benignSample)
 	# std = np.std(benignSample)
@@ -119,12 +120,12 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 	# scale = train_max - threshold
 
 	SUS_IPs = None #place holder
-	# SUS_IPs = dict()
-	# ALL_IPs = dict()
-	# first_occ = dict()
-	# last_occ = dict()
+	SUS_IPs = dict()
+	ALL_IPs = dict()
+	first_occ = dict()
+	last_occ = dict()
 
-	# target_IP = dict()
+	target_IP = dict()
 
 	node_score = nodeScore(memorySize, mode=blockchainMode) # 'offline', 'blocking', 'parallel'
 
@@ -140,9 +141,8 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 
 	FPFNx = []
 	FPFNy = []
-
+	rolling_window = []
 	# pdb.set_trace()
-
 	for i in tqdm( range(benignLimit, len(RMSEs)) ):
 		# if i== len(RMSEs)-(10*benignLimit):
 		# 	invert = True
@@ -168,45 +168,70 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 
 
 		node_score.update(ip,i,rmse)
-		# if (False):
-			# if rmse >= train_max:
-			# 	# RMSEsP.append(1)
-			# 	add = 1
-			# elif rmse > threshold:
-			# 	# RMSEsP.append(1)
-			# 	add =  (rmse - threshold)/scale
-			# else:
-			# 	# RMSEsP.append(rmse)
-			# 	add = 0
+		# if (True):
+		# 	if rmse >= train_max:
+		# 		# RMSEsP.append(1)
+		# 		add = 1
+		# 	elif rmse > threshold:
+		# 		# RMSEsP.append(1)
+		# 		add =  (rmse - threshold)/scale
+		# 	else:
+		# 		# RMSEsP.append(rmse)
+		# 		add = 0
 
-			# try:
-			# 	last_occ[ip] = i
-			# 	ALL_IPs[ip] += 1
-			# except KeyError as e:
-			# 	first_occ[ip] = i
-			# 	ALL_IPs[ip] = 1
+		# 	try:
+		# 		last_occ[ip] = i
+		# 		ALL_IPs[ip] += 1
+		# 	except KeyError as e:
+		# 		first_occ[ip] = i
+		# 		ALL_IPs[ip] = 1
 
-			# if add >= 0:
-			# 	# ip = IPs[i]
-			# 	try:
-			# 		SUS_IPs[ip] += add
-			# 	except KeyError as e:
-			# 		SUS_IPs[ip] = add
+		# 	if add >= 0:
+		# 		# ip = IPs[i]
+		# 		try:
+		# 			SUS_IPs[ip] += add
+		# 		except KeyError as e:
+		# 			SUS_IPs[ip] = add
 
-			# 	try:
-			# 		target_IP[ip][ip_d] += 1
-			# 	except KeyError as e:
-			# 		try:
-			# 			target_IP[ip][ip_d] = 1
-			# 		except KeyError as e:				
-			# 			target_IP[ip] = dict()
-			# 			target_IP[ip][ip_d] = 1
+		# 		try:
+		# 			target_IP[ip][ip_d] += 1
+		# 		except KeyError as e:
+		# 			try:
+		# 				target_IP[ip][ip_d] = 1
+		# 			except KeyError as e:				
+		# 				target_IP[ip] = dict()
+		# 				target_IP[ip][ip_d] = 1
 		
 		try:
 			score = node_score.scores[ip].get_score()
 		except Exception as e:
 			# pdb.set_trace()
 			score = rmse
+
+		rolling_window.append(score)
+		if len(rolling_window) > rolling_window_size:
+			rolling_window = rolling_window[-rolling_window_size:]
+
+			
+
+		if (i - benignLimit) % (interval * n_window) == 0:
+			all_scores = []
+			for key in node_score.scores.keys():
+				try:
+					s = node_score.scores[key].get_score()
+					all_scores.append(s)
+				except Exception as e:
+					continue
+
+			if all_scores:
+				if rolling_window:
+					new_threshold = np.quantile(rolling_window, quantile)
+                # Smooth the threshold update to avoid sudden jumps.
+					threshold = smoothing_factor * threshold + (1 - smoothing_factor) * new_threshold
+					print("thresh",threshold,train_max+3*std)
+					threshold = max(threshold,train_max+3*std)
+					
+
 		
 
 		if score>=threshold:
@@ -257,7 +282,7 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 	plt.axhline(y=train_max, color='r', ls='--')
 	plt.axvline(x=benignLimit/interval, color='k', ls='--')
 
-	# plt.scatter(range(len(scores[-1,:])),scores[-1,:],s=1, marker='x', c='k',label='rmse scores')
+	plt.scatter(range(len(scores[-1,:])),scores[-1,:],s=1, marker='x', c='k',label='rmse scores')
 	for k, key in enumerate (node_score.scores.keys()):
 		plt.scatter(range(len(scores[k,:])),scores[k,:],s=1, marker='.',label=key)
 		# print(k)
@@ -278,12 +303,12 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 
 	plt.show()
 	Supected_IPs =  SUS_IPs
-	# Supected_IPs =  sorted(SUS_IPs.items(), key=lambda x: x[1], reverse=True)
+	Supected_IPs =  sorted(SUS_IPs.items(), key=lambda x: x[1], reverse=True)
 
 	# with open(saveFile, 'w') as f:
 	# 	f.write('ip, occurance, attack prob , first seen , last seen, destination ip , count\n' )
 
-	# 	# pdb.set_trace()
+	# # pdb.set_trace()
 	# 	for tupple in Supected_IPs:
 	# 		# print(ip, ':', Supected_IPs[ip])
 	# 		ip 			=  tupple[0]
@@ -313,7 +338,7 @@ def main():
 	RMSEs = load('RMSEs_OS_scan.pkl')
 	IPs, IPd = build_IP_list('OS_Scan_pcap.pcapng.tsv')
 	LABELS = build_label_list(filename='OS_Scan_labels.csv')
-	gold, pred = get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1, memorySize= 3 , blockchainMode = 'blocking' ) # 'offline', 'blocking', 'parallel')
+	gold, pred = get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1, memorySize= 6 , blockchainMode = 'blocking' ) # 'offline', 'blocking', 'parallel')
 	CM = confusion_matrix(gold, pred, labels=[0, 1])
 	tn, fp, fn, tp = CM.ravel()
 	print(CM)
