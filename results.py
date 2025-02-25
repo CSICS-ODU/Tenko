@@ -319,7 +319,7 @@ def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 5
 	# 		targets 	= target_IP[ip]
 	# 		# print(ip,',', score, ',', occurance,',', score/occurance)
 	# 		# print(ip,',', occurance,',', round(score/occurance,2), ',', first, ',', last )
-	# 		f.write( str(ip)+','+str(occurance)+','+str(round(score,2))+ ','+str(first)+ ','+str(last)+ ',,,\n' )
+	# 		f.write( str(ip)+','+str(occurance)+','+str(round(score/occurance,2))+ ','+str(first)+ ','+str(last)+ ',,,\n' )
 	# 		for target in targets:
 	# 			# print('\t',target,':', targets[target])
 	# 			f.write( ',,,,,'+str(target)+','+str(targets[target])+',\n')
