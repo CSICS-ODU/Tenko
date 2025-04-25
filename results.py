@@ -1,3 +1,307 @@
+# from matplotlib import pyplot as plt
+# from matplotlib import cm, colors
+# import numpy as np
+# from scipy.stats import norm, mode
+# import pickle
+# import pandas as pd
+# import csv
+# from tqdm import tqdm
+# import pdb, traceback
+# from tracker import nodeScore
+# from sklearn.metrics import confusion_matrix
+# from collections import deque
+
+# ##############################################
+# # Enhanced RMSE Pattern Recognizer (Distance) #
+# ##############################################
+# class RMSEPatternRecognizerDist:
+#     """Pattern recognizer using Euclidean distance threshold instead of exact hashes."""
+#     def __init__(self, window_size: int = 100, segments: int = 10, tol_factor: float = 1.1):
+#         self.window_size = window_size
+#         self.segments = segments
+#         self.window = deque(maxlen=window_size)
+#         self.training_vectors = []
+#         self.tol = None
+#         self.centroid = None
+#         self.tol_factor = tol_factor
+
+#     def update(self, value: float):
+#         self.window.append(value)
+
+#     def learn_current_pattern(self):
+#         vec = self._current_vector()
+#         if vec is not None:
+#             self.training_vectors.append(vec)
+
+#     def finalize_training(self):
+#         if not self.training_vectors:
+#             return
+#         arr = np.stack(self.training_vectors, axis=0)
+#         self.centroid = np.mean(arr, axis=0)
+#         dists = np.linalg.norm(arr - self.centroid, axis=1)
+#         self.tol = np.max(dists) * self.tol_factor
+
+#     def is_known(self) -> bool:
+#         vec = self._current_vector()
+#         if vec is None or self.tol is None:
+#             return True
+#         dist = np.linalg.norm(vec - self.centroid)
+#         return dist <= self.tol
+
+#     def _current_vector(self):
+#         if len(self.window) < self.window_size:
+#             return None
+#         seg_len = max(1, self.window_size // self.segments)
+#         vec = np.array([
+#             float(np.mean(list(self.window)[i*seg_len:(i+1)*seg_len]))
+#             for i in range(self.segments)
+#         ])
+#         return vec
+
+# #############################################
+# # Existing utilities (unchanged)             #
+# #############################################
+
+# def load(filename='RMSEs_orig.pkl'):
+#     try:
+#         with open(filename, 'rb') as f:
+#             RMSEs = pickle.load(f)
+#     except FileNotFoundError:
+#         print(filename + ' not found')
+#         RMSEs = []
+#     return RMSEs
+
+# def build_IP_list(filename='mirai.pcap.tsv'):
+#     num_lines = sum(1 for _ in open(filename)) - 1
+#     tsvinfile = open(filename, 'rt', encoding="utf8")
+#     tsvin = csv.reader(tsvinfile, delimiter='\t')
+#     _ = next(tsvin)
+#     IPsrc, IPdest = [], []
+#     for _ in tqdm(range(num_lines)):
+#         try:
+#             row = next(tsvin)
+#             srcIP = dstIP = ''
+#             if row[4] != '':
+#                 srcIP, dstIP = row[4], row[5]
+#             elif row[17] != '':
+#                 srcIP, dstIP = row[17], row[18]
+#             IPsrc.append(srcIP)
+#             IPdest.append(dstIP)
+#         except Exception:
+#             traceback.print_exc()
+#             pdb.set_trace()
+#     return IPsrc, IPdest
+
+# def build_label_list(filename='OS_Scan_labels.csv'):
+#     try:
+#         CSV = pd.read_csv(filename)
+#         LABELS = CSV['x'].tolist()
+#     except FileNotFoundError:
+#         print(filename + ' not found')
+#         LABELS = []
+#     return LABELS
+
+# #######################################################
+# # Core detection function using distance recognizer    #
+# #######################################################
+
+# def get_adversarial_IPs(
+#     IPs,
+#     IPd,
+#     LABELS,
+#     RMSEs,
+#     interval=1000,
+#     memorySize=50,
+#     blockchainMode='offline',
+#     saveFile='results.csv',
+#     n_window=100000,
+#     quantile=0.5,
+#     rolling_window_size=500,
+#     smoothing_factor=0.9,
+#     pattern_window_size=100,
+#     pattern_segments=10,
+#     tol_factor=1.1
+# ):
+
+#     benignLimit = 100000
+#     FMgrace, ADgrace = 5000, 50000
+
+#     print(f"[DEBUG] Raw RMSEs type: {type(RMSEs)} | Length: {len(RMSEs)}")
+#     if len(RMSEs) == 0:
+#         raise ValueError("Loaded RMSEs list is empty.")
+
+#     # Apply tanh normalization
+#     RMSEs = np.tanh(RMSEs)
+#     benignSample = RMSEs[FMgrace + ADgrace + 1:benignLimit]
+#     train_max = np.max(benignSample) #np.mean you can do and then calcualte how it i,proves set static threshodl and see how it comapres
+#     std = np.std(benignSample)
+#     threshold = train_max + 3 * std
+#     print('Initial threshold:', threshold)
+
+#     node_score = nodeScore(memorySize, mode=blockchainMode)
+#     scores = np.zeros((100, int((len(RMSEs) - benignLimit) / interval) + 1))
+# #Old OG experiment
+#     # gold = LABELS[benignLimit:]
+#     # pred = []
+#     # FPFNx, FPFNy = [], []
+#     # rolling_window = []
+# #New experiment
+#     gold = LABELS[benignLimit:]
+#     # 🆕 Predictions for the 4 experiments
+#     pred_unknown   = []   # 1️⃣ unknown pattern only
+#     pred_static    = []   # 2️⃣ score > static threshold
+#     pred_combined  = []   # 3️⃣ unknown OR static
+#     pred_dynamic   = []   # 4️⃣ score > dynamic threshold (your current baseline)
+#     FPFNx, FPFNy = [], []
+#     rolling_window = []
+
+#     # 🆕 Compute STATIC threshold once, right here
+#     static_threshold = train_max + 3 * std
+
+#     # Use distance-based pattern recognizer
+#     pattern_rec = RMSEPatternRecognizerDist(
+#         window_size=pattern_window_size,
+#         segments=pattern_segments,
+#         tol_factor=tol_factor
+#     )
+
+#     # Training phase: collect patterns
+#     for i in range(FMgrace + ADgrace + 1, benignLimit):
+#         rmse = RMSEs[i]
+#         node_score.update(IPs[i], i, rmse)
+#         # compute node_score if needed but skip predictions
+#         try:
+#             score = node_score.scores[IPs[i]].get_score()
+#         except:
+#             score = rmse
+#         pattern_rec.update(score)
+#         pattern_rec.learn_current_pattern()
+#     # finalize tolerance
+#     pattern_rec.finalize_training()
+#     print('Pattern tolerance set to:', pattern_rec.tol)
+
+#     # Testing phase
+#     for i in tqdm(range(benignLimit, len(RMSEs))):
+#         rmse = RMSEs[i]
+#         ip = IPs[i]
+
+#         node_score.update(ip, i, rmse)
+#         try:
+#             score = node_score.scores[ip].get_score()
+#         except:
+#             score = rmse
+
+#         rolling_window.append(score)
+#         if len(rolling_window) > rolling_window_size:
+#             rolling_window = rolling_window[-rolling_window_size:]
+#         pattern_rec.update(score)
+
+#         # dynamic threshold
+#         if (i - benignLimit) % (interval * n_window) == 0 and rolling_window:
+#             new_thr = np.quantile(rolling_window, quantile)
+#             threshold = max(train_max + 3*std,
+#                             smoothing_factor*threshold + (1-smoothing_factor)*new_thr)
+
+#         # distance-based decision
+#         # unknown_pattern = not pattern_rec.is_known()
+#         # if score >= threshold or unknown_pattern: #Caclulate the metric if only compare by unknown pattern instead or score > threshold just check in unknon pattern, 
+#         #     #compare this with just score>threshold 
+#         #     #where you keep threshold where you keep threshold as men + 3*std dev., Dynamic omment out and threshold at the start that I have kept keep that
+#         #     #unknown, static, score > threshold and unknown pattern, score > threshold or Unkwon pattern, consufion metricxs print.
+#         #     flag = 1
+#         # else:
+#         #     flag = 0
+
+#         # if LABELS[i] != flag:
+#         #     if ip != '192.168.2.1':
+#         #         FPFNx.append(i - benignLimit)
+#         #         FPFNy.append(score)
+#         # pred.append(flag)
+# #New experiment
+# # ---------- 4 parallel decision rules ----------
+#         unknown_pattern      = not pattern_rec.is_known()
+#         static_alarm         = score > static_threshold      # fixed thresh
+#         dynamic_alarm        = score > threshold             # moving thresh
+
+#         # 1️⃣ unknown only
+#         pred_unknown.append(1 if unknown_pattern else 0)
+
+#         # 2️⃣ static threshold only
+#         pred_static.append(1 if static_alarm else 0)
+
+#         # 3️⃣ unknown OR static threshold
+#         pred_combined.append(1 if (unknown_pattern or static_alarm) else 0)
+
+#         # 4️⃣ dynamic threshold (baseline)
+#         pred_dynamic.append(1 if dynamic_alarm else 0)
+#         # -----------------------------------------------
+
+#         if i % 100000 == 0:
+#             node_score.finalize()
+#         if i % interval == 0:
+#             j = int((i - benignLimit) / interval)
+#             for k, key in enumerate(node_score.scores.keys()):
+#                 if key == ip:
+#                     scores[k, j] = score
+#             scores[-1, j] = rmse
+
+#     def show_confusion(title, y_true, y_pred):
+#         cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+#         tn, fp, fn, tp = cm.ravel()
+#         print(f"\\n—— {title} ——")
+#         print(cm)
+#         print(f"TPR {tp/(tp+fn):.4f}  FPR {fp/(fp+tn):.4f}  Precision {tp/(tp+fp):.4f}  F1 {2*tp/(2*tp+fp+fn):.4f}")
+
+#     show_confusion("1️⃣ Unknown pattern only",        gold, pred_unknown)
+#     show_confusion("2️⃣ Static threshold only",       gold, pred_static)
+#     show_confusion("3️⃣ Unknown OR static",           gold, pred_combined)
+#     show_confusion("4️⃣ Dynamic threshold (baseline)", gold, pred_dynamic)
+#     return gold, pred_dynamic
+
+#     # # visualize
+#     # scores[scores == 0] = np.nan
+#     # plt.axhline(y=threshold, color='g', ls='--', label='dynamic threshold')
+#     # plt.axhline(y=train_max, color='r', ls='--', label='train max')
+#     # plt.axvline(x=benignLimit/interval, color='k', ls='--', label='train/test split')
+#     # plt.scatter(range(len(scores[-1,:])), scores[-1,:], s=1, marker='x', c='k', label='RMSE')
+#     # for k, key in enumerate(node_score.scores.keys()):
+#     #     plt.scatter(range(len(scores[k,:])), scores[k,:], s=1, marker='.', label=key)
+#     # plt.scatter(FPFNx, FPFNy, s=3, c='r', marker='o', label='FP/FN')
+#     # plt.title('Adjusted Anomaly & Pattern Scores')
+#     # plt.ylabel('Scores')
+#     # plt.xlabel('Time (interval units)')
+#     # plt.legend(loc='upper right', fontsize='x-small')
+#     # plt.show()
+
+#     # return gold, pred
+
+# ######################################################
+# # Driver (example)                                    #
+# ######################################################
+
+# def main():
+#     print('\x1bc')
+#     RMSEs = load('RMSEs_OS_scan.pkl')
+#     IPs, IPd = build_IP_list('OS_Scan_pcap.pcapng.tsv')
+#     LABELS = build_label_list(filename='OS_Scan_labels.csv')
+#     gold, pred = get_adversarial_IPs(
+#         IPs,
+#         IPd,
+#         LABELS,
+#         RMSEs,
+#         interval=1,
+#         memorySize=6,
+#         blockchainMode='blocking',  # 'offline', 'blocking', 'parallel'
+#         pattern_window_size=100,
+#         pattern_segments=10,
+#     )
+#     CM = confusion_matrix(gold, pred, labels=[0, 1])
+#     tn, fp, fn, tp = CM.ravel()
+#     print('Confusion Matrix:\n', CM)
+#     print('TN, FP, FN, TP ->', tn, fp, fn, tp)
+
+# if __name__ == '__main__':
+#     main()
 from matplotlib import pyplot as plt
 from matplotlib import cm, colors
 import numpy as np
@@ -9,356 +313,296 @@ from tqdm import tqdm
 import pdb, traceback
 from tracker import nodeScore
 from sklearn.metrics import confusion_matrix
+from collections import deque
+
+##############################################
+# Enhanced RMSE Pattern Recognizer (Distance) #
+##############################################
+class RMSEPatternRecognizerDist:
+    """Pattern recognizer using Euclidean distance threshold instead of exact hashes."""
+    def __init__(self, window_size: int = 100, segments: int = 10, tol_factor: float = 1.1):
+        self.window_size = window_size
+        self.segments = segments
+        self.window = deque(maxlen=window_size)
+        self.training_vectors = []
+        self.tol = None
+        self.centroid = None
+        self.tol_factor = tol_factor
+
+    def update(self, value: float):
+        self.window.append(value)
+
+    def learn_current_pattern(self):
+        vec = self._current_vector()
+        if vec is not None:
+            self.training_vectors.append(vec)
+
+    def finalize_training(self):
+        if not self.training_vectors:
+            return
+        arr = np.stack(self.training_vectors, axis=0)
+        self.centroid = np.mean(arr, axis=0)
+        dists = np.linalg.norm(arr - self.centroid, axis=1)
+        self.tol = np.max(dists) * self.tol_factor
+
+    def is_known(self) -> bool:
+        vec = self._current_vector()
+        if vec is None or self.tol is None:
+            return True
+        dist = np.linalg.norm(vec - self.centroid)
+        return dist <= self.tol
+
+    def _current_vector(self):
+        if len(self.window) < self.window_size:
+            return None
+        seg_len = max(1, self.window_size // self.segments)
+        vec = np.array([
+            float(np.mean(list(self.window)[i*seg_len:(i+1)*seg_len]))
+            for i in range(self.segments)
+        ])
+        return vec
+
+#############################################
+# Existing utilities (unchanged)             #
+#############################################
 
 def load(filename='RMSEs_orig.pkl'):
-	try:
-		f = open(filename,'rb')
-		RMSEs = pickle.load(f)
-		f.close()
-	except FileNotFoundError as e:
-		print(filename+' not found')
-		RMSEs = []
-	return RMSEs
+    try:
+        with open(filename, 'rb') as f:
+            RMSEs = pickle.load(f)
+    except FileNotFoundError:
+        print(filename + ' not found')
+        RMSEs = []
+    return RMSEs
 
 def build_IP_list(filename='mirai.pcap.tsv'):
-
-	num_lines = sum(1 for line in open(filename))-1
-
-	# print(num_lines)
-
-	tsvinfile = open(filename, 'rt', encoding="utf8")
-	tsvin = csv.reader(tsvinfile, delimiter='\t')
-	row = tsvin.__next__() #move iterator past header
-	IPsrc = []
-	IPdest = []
-	for row_id in tqdm(range(num_lines)):
-		# print(IPsrc,row_id)
-		try:
-			row = tsvin.__next__()
-			IPtype = np.nan
-			timestamp = row[0]
-			framelen = row[1]
-			srcIP = ''
-			dstIP = ''
-			if row[4] != '':  # IPv4
-				srcIP = row[4]
-				dstIP = row[5]
-				IPtype = 0
-			elif row[17] != '':  # ipv6
-				srcIP = row[17]
-				dstIP = row[18]
-				IPtype = 1
-			srcproto = row[6] + row[8]  # UDP or TCP port: the concatenation of the two port strings will will results in an OR "[tcp|udp]"
-			dstproto = row[7] + row[9]  # UDP or TCP port
-			srcMAC = row[2]
-			dstMAC = row[3]
-			if srcproto == '':  # it's a L2/L1 level protocol
-				if row[12] != '':  # is ARP
-					srcproto = 'arp'
-					dstproto = 'arp'
-					srcIP = row[14]  # src IP (ARP)
-					dstIP = row[16]  # dst IP (ARP)
-					IPtype = 0
-				elif row[10] != '':  # is ICMP
-					srcproto = 'icmp'
-					dstproto = 'icmp'
-					IPtype = 0
-				elif srcIP + srcproto + dstIP + dstproto == '':  # some other protocol
-					srcIP = row[2]  # src MAC
-					dstIP = row[3]  # dst MAC
-
-				# save # IPtype, srcMAC, dstMAC, srcIP, srcproto, dstIP, dstproto, int(framelen), float(timestamp)
-			IPsrc.append(srcIP)
-			IPdest.append(dstIP)
-
-			# print(IPsrc,row_id)
-
-			assert len(IPsrc)==row_id+1
-
-		except Exception as e:
-			traceback.print_exc()
-			pdb.set_trace()
-
-	return IPsrc, IPdest
+    num_lines = sum(1 for _ in open(filename)) - 1
+    tsvinfile = open(filename, 'rt', encoding="utf8")
+    tsvin = csv.reader(tsvinfile, delimiter='\t')
+    _ = next(tsvin)
+    IPsrc, IPdest = [], []
+    for _ in tqdm(range(num_lines)):
+        try:
+            row = next(tsvin)
+            srcIP = dstIP = ''
+            if row[4] != '':
+                srcIP, dstIP = row[4], row[5]
+            elif row[17] != '':
+                srcIP, dstIP = row[17], row[18]
+            IPsrc.append(srcIP)
+            IPdest.append(dstIP)
+        except Exception:
+            traceback.print_exc()
+            pdb.set_trace()
+    return IPsrc, IPdest
 
 def build_label_list(filename='OS_Scan_labels.csv'):
-	try:
-		CSV = pd.read_csv(filename)
-		LABELS = CSV['x'].tolist()
-	except FileNotFoundError as e:
-		print(filename+' not found')
-		LABELS = []
-	return LABELS
+    try:
+        CSV = pd.read_csv(filename)
+        LABELS = CSV['x'].tolist()
+    except FileNotFoundError:
+        print(filename + ' not found')
+        LABELS = []
+    return LABELS
 
+#######################################################
+# Core detection function using distance recognizer    #
+#######################################################
 
+def get_adversarial_IPs(
+    IPs,
+    IPd,
+    LABELS,
+    RMSEs,
+    interval=1000,
+    memorySize=50,
+    blockchainMode='offline',
+    saveFile='results.csv',
+    n_window=100000,
+    quantile=0.5,
+    rolling_window_size=500,
+    smoothing_factor=0.9,
+    pattern_window_size=100,
+    pattern_segments=10,
+    tol_factor=0.05
+):
 
+    benignLimit = 100000
+    FMgrace, ADgrace = 5000, 50000
 
+    print(f"[DEBUG] Raw RMSEs type: {type(RMSEs)} | Length: {len(RMSEs)}")
+    if len(RMSEs) == 0:
+        raise ValueError("Loaded RMSEs list is empty.")
 
-def get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1000, memorySize = 50, blockchainMode ='offline', saveFile= 'results.csv',n_window=100000, quantile=0.5, rolling_window_size=500, smoothing_factor=0.9):
+    # Apply tanh normalization
+    RMSEs = np.tanh(RMSEs)
+    benignSample = RMSEs[FMgrace + ADgrace + 1:benignLimit]
+    train_max = np.max(benignSample) #np.mean you can do and then calcualte how it i,proves set static threshodl and see how it comapres
+    std = np.std(benignSample)
+    threshold = train_max + 3 * std
+    print('Initial threshold:', threshold)
 
-	benignLimit=100000
-	FMgrace = 5000
-	ADgrace = 50000
+    node_score = nodeScore(memorySize, mode=blockchainMode)
+    scores = np.zeros((100, int((len(RMSEs) - benignLimit) / interval) + 1))
+#Old OG experiment
+    # gold = LABELS[benignLimit:]
+    # pred = []
+    # FPFNx, FPFNy = [], []
+    # rolling_window = []
+#New experiment
+    gold = LABELS[benignLimit:]
+    # 🆕 Predictions for the 4 experiments
+    pred_unknown   = []   # 1️⃣ unknown pattern only
+    pred_static    = []   # 2️⃣ score > static threshold
+    pred_combined  = []   # 3️⃣ unknown OR static
+    pred_dynamic   = []   # 4️⃣ score > dynamic threshold (your current baseline)
+    FPFNx, FPFNy = [], []
+    rolling_window = []
 
-	RMSEs =  np.tanh(RMSEs)
+    # 🆕 Compute STATIC threshold once, right here
+    static_threshold = train_max + 3 * std
 
-	benignSample = RMSEs[FMgrace+ADgrace+1:benignLimit]
+    # Use distance-based pattern recognizer
+    pattern_rec = RMSEPatternRecognizerDist(
+        window_size=pattern_window_size,
+        segments=pattern_segments,
+        tol_factor=tol_factor
+    )
 
-	mean = np.mean(benignSample)
-	std = np.std(benignSample)
-	train_max = max(benignSample)
+    # Training phase: collect patterns
+    for i in range(FMgrace + ADgrace + 1, benignLimit):
+        rmse = RMSEs[i]
+        node_score.update(IPs[i], i, rmse)
+        # compute node_score if needed but skip predictions
+        try:
+            score = node_score.scores[IPs[i]].get_score()
+        except:
+            score = rmse
+        pattern_rec.update(score)
+        pattern_rec.learn_current_pattern()
+    # finalize tolerance
+    pattern_rec.finalize_training()
+    print('Pattern tolerance set to:', pattern_rec.tol)
 
-	threshold = train_max+3*std
-	print(threshold)
+    # Testing phase
+    for i in tqdm(range(benignLimit, len(RMSEs))):
+        rmse = RMSEs[i]
+        ip = IPs[i]
 
-	# mean = np.mean(benignSample)
-	# std = np.std(benignSample)
+        node_score.update(ip, i, rmse)
+        try:
+            score = node_score.scores[ip].get_score()
+        except:
+            score = rmse
 
-	# train_max = max(benignSample)
-	# threshold = mean+3*std
+        rolling_window.append(score)
+        if len(rolling_window) > rolling_window_size:
+            rolling_window = rolling_window[-rolling_window_size:]
+        pattern_rec.update(score)
 
-	# scale = train_max - threshold
+        # dynamic threshold
+        if (i - benignLimit) % (interval * n_window) == 0 and rolling_window:
+            new_thr = np.quantile(rolling_window, quantile)
+            threshold = max(train_max + 3*std,
+                            smoothing_factor*threshold + (1-smoothing_factor)*new_thr)
 
-	SUS_IPs = None #place holder
-	SUS_IPs = dict()
-	ALL_IPs = dict()
-	first_occ = dict()
-	last_occ = dict()
+        # distance-based decision
+        # unknown_pattern = not pattern_rec.is_known()
+        # if score >= threshold or unknown_pattern: #Caclulate the metric if only compare by unknown pattern instead or score > threshold just check in unknon pattern, 
+        #     #compare this with just score>threshold 
+        #     #where you keep threshold where you keep threshold as men + 3*std dev., Dynamic omment out and threshold at the start that I have kept keep that
+        #     #unknown, static, score > threshold and unknown pattern, score > threshold or Unkwon pattern, consufion metricxs print.
+        #     flag = 1
+        # else:
+        #     flag = 0
 
-	target_IP = dict()
+        # if LABELS[i] != flag:
+        #     if ip != '192.168.2.1':
+        #         FPFNx.append(i - benignLimit)
+        #         FPFNy.append(score)
+        # pred.append(flag)
+#New experiment
+# ---------- 4 parallel decision rules ----------
+        unknown_pattern      = not pattern_rec.is_known()
+        static_alarm         = score > static_threshold      # fixed thresh
+        dynamic_alarm        = score > threshold             # moving thresh
 
-	node_score = nodeScore(memorySize, mode=blockchainMode) # 'offline', 'blocking', 'parallel'
+        # 1️⃣ unknown only
+        pred_unknown.append(1 if unknown_pattern else 0)
 
+        # 2️⃣ static threshold only
+        pred_static.append(1 if static_alarm else 0)
 
-	# RMSEsP  = []
-	scores = np.zeros((100, int((len(RMSEs)-benignLimit)/interval)+1))
+        # 3️⃣ unknown OR static threshold
+        pred_combined.append(1 if (unknown_pattern or static_alarm) else 0)
 
-	# invert = True
-	invert = False
+        # 4️⃣ dynamic threshold (baseline)
+        pred_dynamic.append(1 if dynamic_alarm else 0)
+        # -----------------------------------------------
 
-	gold = LABELS[benignLimit:]
-	pred = []
+        if i % 100000 == 0:
+            node_score.finalize()
+        if i % interval == 0:
+            j = int((i - benignLimit) / interval)
+            for k, key in enumerate(node_score.scores.keys()):
+                if key == ip:
+                    scores[k, j] = score
+            scores[-1, j] = rmse
 
-	FPFNx = []
-	FPFNy = []
-	rolling_window = []
-	# pdb.set_trace()
-	for i in tqdm( range(benignLimit, len(RMSEs)) ):
-		# if i== len(RMSEs)-(10*benignLimit):
-		# 	invert = True
-		if invert:	
-			rmse =  1- RMSEs[i]
-		else:
-			rmse =  RMSEs[i]
-		ip = IPs[i]
-		ip_d = IPd[i]
+    def show_confusion(title, y_true, y_pred):
+        cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+        tn, fp, fn, tp = cm.ravel()
+        print(f"\\n—— {title} ——")
+        print(cm)
+        print(f"TPR {tp/(tp+fn):.4f}  FPR {fp/(fp+tn):.4f}  Precision {tp/(tp+fp):.4f}  F1 {2*tp/(2*tp+fp+fn):.4f}")
 
-		# print(i)
-		# if i>benignLimit:
-		# pdb.set_trace()
-		
-			
-			
+    show_confusion("1️⃣ Unknown pattern only",        gold, pred_unknown)
+    show_confusion("2️⃣ Static threshold only",       gold, pred_static)
+    show_confusion("3️⃣ Unknown OR static",           gold, pred_combined)
+    show_confusion("4️⃣ Dynamic threshold (baseline)", gold, pred_dynamic)
+    return gold, pred_dynamic
 
+    # # visualize
+    # scores[scores == 0] = np.nan
+    # plt.axhline(y=threshold, color='g', ls='--', label='dynamic threshold')
+    # plt.axhline(y=train_max, color='r', ls='--', label='train max')
+    # plt.axvline(x=benignLimit/interval, color='k', ls='--', label='train/test split')
+    # plt.scatter(range(len(scores[-1,:])), scores[-1,:], s=1, marker='x', c='k', label='RMSE')
+    # for k, key in enumerate(node_score.scores.keys()):
+    #     plt.scatter(range(len(scores[k,:])), scores[k,:], s=1, marker='.', label=key)
+    # plt.scatter(FPFNx, FPFNy, s=3, c='r', marker='o', label='FP/FN')
+    # plt.title('Adjusted Anomaly & Pattern Scores')
+    # plt.ylabel('Scores')
+    # plt.xlabel('Time (interval units)')
+    # plt.legend(loc='upper right', fontsize='x-small')
+    # plt.show()
 
+    # return gold, pred
 
-		
-
-
-
-
-		node_score.update(ip,i,rmse)
-		# if (True):
-		# 	if rmse >= train_max:
-		# 		# RMSEsP.append(1)
-		# 		add = 1
-		# 	elif rmse > threshold:
-		# 		# RMSEsP.append(1)
-		# 		add =  (rmse - threshold)/scale
-		# 	else:
-		# 		# RMSEsP.append(rmse)
-		# 		add = 0
-
-		# 	try:
-		# 		last_occ[ip] = i
-		# 		ALL_IPs[ip] += 1
-		# 	except KeyError as e:
-		# 		first_occ[ip] = i
-		# 		ALL_IPs[ip] = 1
-
-		# 	if add >= 0:
-		# 		# ip = IPs[i]
-		# 		try:
-		# 			SUS_IPs[ip] += add
-		# 		except KeyError as e:
-		# 			SUS_IPs[ip] = add
-
-		# 		try:
-		# 			target_IP[ip][ip_d] += 1
-		# 		except KeyError as e:
-		# 			try:
-		# 				target_IP[ip][ip_d] = 1
-		# 			except KeyError as e:				
-		# 				target_IP[ip] = dict()
-		# 				target_IP[ip][ip_d] = 1
-		
-		try:
-			score = node_score.scores[ip].get_score()
-		except Exception as e:
-			# pdb.set_trace()
-			score = rmse
-
-		rolling_window.append(score)
-		if len(rolling_window) > rolling_window_size:
-			rolling_window = rolling_window[-rolling_window_size:]
-
-			
-
-		if (i - benignLimit) % (interval * n_window) == 0:
-			all_scores = []
-			for key in node_score.scores.keys():
-				try:
-					s = node_score.scores[key].get_score()
-					all_scores.append(s)
-				except Exception as e:
-					continue
-
-			if all_scores:
-				if rolling_window:
-					new_threshold = np.quantile(rolling_window, quantile)
-                # Smooth the threshold update to avoid sudden jumps.
-					threshold = smoothing_factor * threshold + (1 - smoothing_factor) * new_threshold
-					print("thresh",threshold,train_max+3*std)
-					threshold = max(threshold,train_max+3*std)
-					
-
-		
-
-		if score>=threshold:
-			flag=1
-		else:
-			flag=0
-		
-
-		if LABELS[i]!= flag:
-			if ip == '192.168.2.1':
-				flag = LABELS[i]
-			else:
-				# print(ip)
-				FPFNx.append(i-benignLimit)
-				FPFNy.append(score)
-
-
-
-		pred.append(flag)
-
-		if i%100000==0:
-			node_score.finalize()
-
-		if i%interval==0:
-			# print(i)
-			j= int((i-benignLimit)/interval)
-			# node_score.finalize()
-			for k, key in enumerate (node_score.scores.keys()):
-				try:
-					if key==ip:
-						scores[k,j] = score #node_score.scores[key].get_score()
-						# pass
-				except Exception as e:
-					traceback.print_exc()
-					pdb.set_trace()
-
-			# scores[-2,j] = node_score.scores[ip].get_score()
-			scores[-1,j] = rmse
-
-	# node_score.finalize()
-	print(node_score.scores)
-
-	# scores = [float('nan') if x==0 else x for x in scores]
-	scores[ scores==0 ] = np.nan
-
-
-	plt.axhline(y=threshold, color='g', ls='--')
-	plt.axhline(y=train_max, color='r', ls='--')
-	plt.axvline(x=benignLimit/interval, color='k', ls='--')
-
-	plt.scatter(range(len(scores[-1,:])),scores[-1,:],s=1, marker='x', c='k',label='rmse scores')
-	for k, key in enumerate (node_score.scores.keys()):
-		plt.scatter(range(len(scores[k,:])),scores[k,:],s=1, marker='.',label=key)
-		# print(k)
-		
-	# plt.scatter(range(len(scores[-2,:])),scores[-2,:],s=0.1, c='k',label='adjusted scores')
-	# plt.plot(range(len(scores[-1,:])),scores[-1,:],'.')
-	
-	plt.scatter(FPFNx,FPFNy, s=1, c='r', marker='o',label='FP')
-	
-
-	# lgnd =plt.legend( title="node ids")#, bbox_to_anchor=(1.05, 1), loc='upper left', )
-	# for k in range(len(node_score.scores)+1):
-	# 	lgnd.legendHandles[k]._sizes = [30]
-
-	plt.title("Adjusted Anomaly Scores")
-	plt.ylabel("Scores")
-	plt.xlabel("Time elapsed [1000 mins]")
-
-	plt.show()
-	Supected_IPs =  SUS_IPs
-	Supected_IPs =  sorted(SUS_IPs.items(), key=lambda x: x[1], reverse=True)
-
-	# with open(saveFile, 'w') as f:
-	# 	f.write('ip, occurance, attack prob , first seen , last seen, destination ip , count\n' )
-
-	# # pdb.set_trace()
-	# 	for tupple in Supected_IPs:
-	# 		# print(ip, ':', Supected_IPs[ip])
-	# 		ip 			=  tupple[0]
-	# 		score 		= tupple[1]
-	# 		occurance 	= ALL_IPs[ip]
-	# 		first 		= first_occ[ip]
-	# 		last 		= last_occ[ip]
-	# 		targets 	= target_IP[ip]
-	# 		# print(ip,',', score, ',', occurance,',', score/occurance)
-	# 		# print(ip,',', occurance,',', round(score/occurance,2), ',', first, ',', last )
-	# 		f.write( str(ip)+','+str(occurance)+','+str(round(score/occurance,2))+ ','+str(first)+ ','+str(last)+ ',,,\n' )
-	# 		for target in targets:
-	# 			# print('\t',target,':', targets[target])
-	# 			f.write( ',,,,,'+str(target)+','+str(targets[target])+',\n')
-
-	# 		# f.write('\n' )
-
-
-	
-	# print(benignLimit)
-	
-	
-	return gold, pred#Supected_IPs, node_score
+######################################################
+# Driver (example)                                    #
+######################################################
 
 def main():
-	print('\x1bc')
-	RMSEs = load('RMSEs_OS_scan.pkl')
-	IPs, IPd = build_IP_list('OS_Scan_pcap.pcapng.tsv')
-	LABELS = build_label_list(filename='OS_Scan_labels.csv')
-	gold, pred = get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval = 1, memorySize= 6 , blockchainMode = 'blocking' ) # 'offline', 'blocking', 'parallel')
-	CM = confusion_matrix(gold, pred, labels=[0, 1])
-	tn, fp, fn, tp = CM.ravel()
-	print(CM)
-	print(tn, fp, fn, tp) 
-
-# print( len(IPs), len(IPsrc) )
-
-# import importlib, results as r
-# importlib.reload(r)
-# RMSEs = r.load('RMSEs_OS_scan.pkl')
-# IPs, IPd = r.build_IP_list('OS_Scan_pcap.pcapng.tsv')
-# sip, ns = r.get_adversarial_IPs(IPs, IPd, RMSEs, memorySize= 3 , blockchainMode = 'blocking' ) # 'offline', 'blocking', 'parallel')
-# sip, ns = r.get_adversarial_IPs(IPs, IPd, RMSEs)
-
-# print( len(IPs), len(IPsrc) )
-
-# pdb.set_trace()
-
-
+    print('\x1bc')
+    RMSEs = load('RMSEs_OS_scan.pkl')
+    IPs, IPd = build_IP_list('OS_Scan_pcap.pcapng.tsv')
+    LABELS = build_label_list(filename='OS_Scan_labels.csv')
+    gold, pred = get_adversarial_IPs(
+        IPs,
+        IPd,
+        LABELS,
+        RMSEs,
+        interval=1,
+        memorySize=6,
+        blockchainMode='blocking',  # 'offline', 'blocking', 'parallel'
+        pattern_window_size=100,
+        pattern_segments=10,
+    )
+    CM = confusion_matrix(gold, pred, labels=[0, 1])
+    tn, fp, fn, tp = CM.ravel()
+    print('Confusion Matrix:\n', CM)
+    print('TN, FP, FN, TP ->', tn, fp, fn, tp)
 
 if __name__ == '__main__':
 	main()
-
