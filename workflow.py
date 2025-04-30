@@ -37,7 +37,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 
     # Perform adversarial IP analysis
     print("Starting adversarial IP analysis...")
-    gold, pred = get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval=1, memorySize=3, blockchainMode=blockchainMode)
+    gold, pred = get_adversarial_IPs(IPs, IPd, LABELS, RMSEs, interval=1, memorySize=60, blockchainMode=blockchainMode)
     
     # Generate and display confusion matrix
     CM = confusion_matrix(gold, pred, labels=[0, 1])

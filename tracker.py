@@ -21,7 +21,6 @@ class scoreClass():
 		self.numerator 		= n
 		self.denominator	= d
 		self.finalized		= False
-
 		self._key 			= initial_key
 		self._key_lock 		= threading.Lock()
 
