@@ -6,6 +6,7 @@ import pdb, traceback
 import pickle
 from tqdm import tqdm
 from plot import plot_loss
+from memutil import deep_sizeof
 
 from tracker import nodeScore
 
@@ -59,6 +60,8 @@ def evaluate(path = "mirai.pcap.tsv",
 
     # node_score = nodeScore(NumNodes)
 
+    x1_times = []
+    x1_memory = []
 
     load_precomputed =  False
 
@@ -82,6 +85,7 @@ def evaluate(path = "mirai.pcap.tsv",
 
             RMSEs = []
             src_IPs = []
+            _last_model_mem = 0
             i = 0
             start = time.time()
             # Here we process (train/execute) each individual packet.
@@ -116,11 +120,7 @@ def evaluate(path = "mirai.pcap.tsv",
                     pbar = tqdm(total=100000, leave=False)
 
 
-                rmse, msg, src_IP = K.proc_next_packet()
-                # if msg:
-                #     print(msg,i)
-
-                
+                rmse, msg, src_IP, ae_time = K.proc_next_packet()
 
                 if i%100000==0 and i>100000:
                     try:
@@ -138,6 +138,10 @@ def evaluate(path = "mirai.pcap.tsv",
                     pbar.close()
                     break
 
+                x1_times.append(ae_time)
+                if i % 1000 == 1 or i <= 10:
+                    _last_model_mem = deep_sizeof(K.AnomDetector)
+                x1_memory.append(_last_model_mem)
 
                 rmse =  np.tanh(rmse)
                 # node_score.update(src_IP,i,rmse)
@@ -155,25 +159,17 @@ def evaluate(path = "mirai.pcap.tsv",
             try:
                 save(RMSEs, 'RMSEs.pkl')
                 save(src_IPs, 'SRC_IP.pkl')
+                save({'x1_times': x1_times, 'x1_memory': x1_memory}, 'X1_layer_data.pkl')
+                print(f"X1 layer data saved: {len(x1_times)} measurements")
             except Exception as e:
                 traceback.print_exc()
                 pdb.set_trace()
-            
-
-        # Here we demonstrate how one can fit the RMSE scores to a log-normal distribution (useful for finding/setting a cutoff threshold \phi)
-        
-        # print("Plotting results")
-        # plot_loss(RMSEs,interval=1)
-
-        # plt.figure(figsize=(10,5))
-        # plt.scatter(range(0,len(RMSEs)), RMSEs[:])
-        # plt.show()
-
-
 
     except Exception as e:
         traceback.print_exc()
         pdb.set_trace()
+
+    return x1_times, x1_memory
 
 
 

@@ -6,6 +6,25 @@ import torch.nn.functional as F
 import pdb
 # from KitNET.utils import *
 # import json
+class ResAE(nn.Module):
+    """An Autoencoder with a residual skip connection."""
+    def __init__(self, params):
+        super(ResAE, self).__init__()
+        self.encoder = nn.Linear(in_features=params.n_visible, out_features=params.n_hidden)
+        self.decoder = nn.Linear(in_features=params.n_hidden, out_features=params.n_visible) 
+    
+    def forward(self, x):
+        # Save the original input for the skip connection
+        original_input = x
+        
+        # Pass through the autoencoder
+        encoded = self.encoder(x)
+        decoded = self.decoder(encoded)
+        
+        # Add the original input (the skip connection) to the reconstructed output
+        reconstructed = decoded + original_input
+        
+        return reconstructed
 
 class dA_params:
     def __init__(self,n_visible = 5, n_hidden = 3, lr=0.001, corruption_level=0.0, gracePeriod = 10000, hiddenRatio=None, learning_rate=1e-4):
@@ -87,8 +106,8 @@ class dA:
         self.norm_min = np.ones((self.params.n_visible,)) * np.Inf
         self.n = 0    # epoch / packet count
 
-
-        self.model = AE(self.params)
+        self.model = ResAE(self.params) # Use the new residual autoencoder
+        # self.model = AE(self.params)
         self.trained = False
 
 

@@ -1,6 +1,7 @@
 from FeatureExtractor import *
 from KitNET.KitNET import KitNET
 import pdb, traceback
+import time
 
 # MIT License
 #
@@ -38,20 +39,20 @@ class Kitsune:
         # create feature vector
         x = self.FE.get_next_vector()
         if len(x) == 0:
-            return -1 , '', None #Error or no packets left
+            return -1 , '', None, 0.0 #Error or no packets left
         else:
             src_IP = x[1]
             x = x[0]
-            # pdb.set_trace()
             
         try:
-            # process KitNET
-            rmse, msg = self.AnomDetector.process(x)  # will train during the grace periods, then execute on all the rest.
+            # process KitNET -- time only the autoencoder step (X1)
+            _t0 = time.perf_counter()
+            rmse, msg = self.AnomDetector.process(x)
+            _t1 = time.perf_counter()
 
         except Exception as e:
             traceback.print_exc()
             pdb.set_trace()
         
-
-        return rmse, msg, src_IP  # will train during the grace periods, then execute on all the rest.
+        return rmse, msg, src_IP, (_t1 - _t0)
 
