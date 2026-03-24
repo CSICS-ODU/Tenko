@@ -2,6 +2,8 @@ from Kitsune import Kitsune
 import numpy as np
 from scipy.stats import norm
 import time
+import os
+import psutil
 import pdb, traceback
 import pickle
 from tqdm import tqdm
@@ -62,6 +64,8 @@ def evaluate(path = "mirai.pcap.tsv",
 
     x1_times = []
     x1_memory = []
+    x1_memory_rss = []
+    _process = psutil.Process(os.getpid())
 
     load_precomputed =  False
 
@@ -141,7 +145,9 @@ def evaluate(path = "mirai.pcap.tsv",
                 x1_times.append(ae_time)
                 if i % 1000 == 1 or i <= 10:
                     _last_model_mem = deep_sizeof(K.AnomDetector)
+                    _last_rss = _process.memory_info().rss
                 x1_memory.append(_last_model_mem)
+                x1_memory_rss.append(_last_rss)
 
                 rmse =  np.tanh(rmse)
                 # node_score.update(src_IP,i,rmse)
@@ -159,7 +165,7 @@ def evaluate(path = "mirai.pcap.tsv",
             try:
                 save(RMSEs, 'RMSEs.pkl')
                 save(src_IPs, 'SRC_IP.pkl')
-                save({'x1_times': x1_times, 'x1_memory': x1_memory}, 'X1_layer_data.pkl')
+                save({'x1_times': x1_times, 'x1_memory': x1_memory, 'x1_memory_rss': x1_memory_rss}, 'X1_layer_data.pkl')
                 print(f"X1 layer data saved: {len(x1_times)} measurements")
             except Exception as e:
                 traceback.print_exc()
@@ -169,7 +175,7 @@ def evaluate(path = "mirai.pcap.tsv",
         traceback.print_exc()
         pdb.set_trace()
 
-    return x1_times, x1_memory
+    return x1_times, x1_memory, x1_memory_rss
 
 
 

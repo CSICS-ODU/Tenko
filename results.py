@@ -658,6 +658,8 @@ import pickle
 import pandas as pd
 import csv
 import time
+import os
+import psutil
 from tqdm import tqdm
 from memutil import deep_sizeof
 import pdb, traceback
@@ -807,7 +809,10 @@ def get_adversarial_IPs_weighted_pattern(
 
 	x2_times: List[float] = []
 	x2_memory: List[int] = []
+	x2_memory_rss: List[int] = []
 	_last_x2_mem = 0
+	_last_x2_rss = 0
+	_x2_process = psutil.Process(os.getpid())
 
 	# ─── Training Phase ───────────────────
 	print("Starting Training Phase...")
@@ -830,7 +835,9 @@ def get_adversarial_IPs_weighted_pattern(
 		x2_times.append(_t1 - _t0)
 		if (i - train_start_idx) % 1000 == 0:
 			_last_x2_mem = deep_sizeof(node_score) + deep_sizeof(per_ip_recognizers) + deep_sizeof(single_aggregate_recognizer)
+			_last_x2_rss = _x2_process.memory_info().rss
 		x2_memory.append(_last_x2_mem)
+		x2_memory_rss.append(_last_x2_rss)
 
 	# ─── Finalize Recognizers ──────────────────────────────────────────
 	print("Finalizing Recognizers...")
@@ -903,7 +910,9 @@ def get_adversarial_IPs_weighted_pattern(
 		x2_times.append(_t1 - _t0)
 		if (i - benignLimit) % 1000 == 0:
 			_last_x2_mem = deep_sizeof(node_score) + deep_sizeof(per_ip_recognizers) + deep_sizeof(single_aggregate_recognizer)
+			_last_x2_rss = _x2_process.memory_info().rss
 		x2_memory.append(_last_x2_mem)
+		x2_memory_rss.append(_last_x2_rss)
 
 		# Periodic finalization (if required by tracker)
 		if (i - benignLimit + 1) % 100000 == 0:
@@ -942,8 +951,8 @@ def get_adversarial_IPs_weighted_pattern(
 	eer = fpr_arr[eer_idx]
 	print(f"AUC = {roc_auc:.4f}, EER = {eer:.4f} (threshold ≈ {thresholds[eer_idx]:.4f})")
 
-	# Optional: plot ROC
-	plt.figure()
+	# Save ROC plot to file (non-blocking)
+	fig_roc = plt.figure()
 	plt.plot(fpr_arr, tpr_arr, lw=2, label=f"ROC (AUC = {roc_auc:.2f})")
 	plt.plot([0,1],[0,1], linestyle='--', color='gray')
 	plt.scatter(fpr_arr[eer_idx], tpr_arr[eer_idx], color='red',
@@ -953,7 +962,9 @@ def get_adversarial_IPs_weighted_pattern(
 	plt.title("ROC Curve for Weighted Ensemble")
 	plt.legend(loc="lower right")
 	plt.grid(True)
-	plt.show()
+	fig_roc.savefig("roc_curve_weighted_ensemble.png", dpi=150, bbox_inches="tight")
+	plt.close(fig_roc)
+	print("ROC plot saved to roc_curve_weighted_ensemble.png")
 
 
 	# --- Return Value ---
@@ -971,12 +982,12 @@ def get_adversarial_IPs_weighted_pattern(
 			fig_cm, ax_cm = plt.subplots(1, 1, figsize=(5, 4))
 			disp = ConfusionMatrixDisplay(confusion_matrix=cm_final, display_labels=["Benign", "Attack"])
 			disp.plot(ax=ax_cm, cmap=plt.cm.Blues, colorbar=False); ax_cm.set_title(f"CM ({ensemble_name})")
-			plt.tight_layout(); plt.show()
+			plt.tight_layout(); fig_cm.savefig("confusion_matrix.png", dpi=150, bbox_inches="tight"); plt.close(fig_cm)
 			# (Time series plot code omitted for brevity, but would use 'ensemble_name' in title)
 		except Exception as e: print(f"[ERROR] Visualization failed: {e}")
 
 	print(f"X2 layer data collected: {len(x2_times)} measurements")
-	return gold, final_pred_to_return, x2_times, x2_memory
+	return gold, final_pred_to_return, x2_times, x2_memory, x2_memory_rss
 
 ######################################################
 # Driver (Updated Example for Weighted Patterns)     #

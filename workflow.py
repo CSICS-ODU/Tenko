@@ -11,7 +11,7 @@ import csv
 def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockchainMode='offline'):
     print('\x1bc')
 
-    x1_times, x1_memory = [], []
+    x1_times, x1_memory, x1_memory_rss = [], [], []
 
     # Check if saved RMSE is provided
     if saved_RMSE:
@@ -30,6 +30,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
                 x1_data = pickle.load(f)
             x1_times = x1_data.get('x1_times', [])
             x1_memory = x1_data.get('x1_memory', [])
+            x1_memory_rss = x1_data.get('x1_memory_rss', [])
         else:
             print("[Warning] No saved X1 layer data found. X1 columns will be zero.")
     else:
@@ -39,7 +40,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
         
         # Parse PCAP into TSV and generate RMSE (captures X1 measurements)
         print(f"Running evaluation on {input_pcap}...")
-        x1_times, x1_memory = evaluate(path=input_pcap, maxAE=10, FMgrace=5000, ADgrace=50000, NumNodes=50)
+        x1_times, x1_memory, x1_memory_rss = evaluate(path=input_pcap, maxAE=10, FMgrace=5000, ADgrace=50000, NumNodes=50)
         RMSEs = load('RMSEs.pkl')
 
     # Build IP lists and labels
@@ -53,7 +54,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 
     # Perform adversarial IP analysis (captures X2 measurements)
     print("Starting adversarial IP analysis...")
-    gold, pred, x2_times, x2_memory = get_adversarial_IPs_weighted_pattern(
+    gold, pred, x2_times, x2_memory, x2_memory_rss = get_adversarial_IPs_weighted_pattern(
         IPs, IPd, LABELS, RMSEs, memorySize=60, blockchainMode=blockchainMode)
     
     # Generate and display confusion matrix
@@ -73,6 +74,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 
     x2_time_arr = np.array(x2_times, dtype=float) * SEC_TO_MS
     x2_mem_arr = np.array(x2_memory, dtype=float) * BYTES_TO_MB
+    x2_rss_arr = np.array(x2_memory_rss, dtype=float) * BYTES_TO_MB
     n_points = len(x2_time_arr)
 
     r3_time = rng.uniform(-0.10, 0.10, size=n_points)
@@ -96,14 +98,17 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
     train_start_idx = FMgrace + ADgrace + 1
     x1_aligned_times = []
     x1_aligned_memory = []
+    x1_aligned_rss = []
     for j in range(n_points):
         pkt_idx = train_start_idx + j
         if pkt_idx < len(x1_times):
             x1_aligned_times.append(x1_times[pkt_idx] * SEC_TO_MS)
             x1_aligned_memory.append(x1_memory[pkt_idx] * BYTES_TO_MB)
+            x1_aligned_rss.append(x1_memory_rss[pkt_idx] * BYTES_TO_MB if pkt_idx < len(x1_memory_rss) else 0.0)
         else:
             x1_aligned_times.append(0.0)
             x1_aligned_memory.append(0.0)
+            x1_aligned_rss.append(0.0)
 
     # ─── Save to CSV ──────────────────────────────────────────────────
     output_dir = os.path.dirname(saved_RMSE) if saved_RMSE else '.'
@@ -138,6 +143,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
     # ─── Summary Table (Table IX format) ─────────────────────────────
     x1_time_aligned = np.array(x1_aligned_times)
     x1_mem_aligned = np.array(x1_aligned_memory)
+    x1_rss_aligned = np.array(x1_aligned_rss)
 
     x1_mean_ms = x1_time_aligned.mean() if len(x1_time_aligned) else 0.0
     x2_mean_ms = x2_time_arr.mean()
@@ -145,21 +151,30 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
     x4_mean_ms = x4_time.mean()
     tenko_lat = x1_mean_ms + x2_mean_ms + x3_mean_ms + x4_mean_ms
 
+    # deep_sizeof (object-level)
     x1_mean_mem = x1_mem_aligned.mean() if len(x1_mem_aligned) else 0.0
     x2_mean_mem = x2_mem_arr.mean()
     x3_mean_mem = x3_mem.mean()
     x4_mean_mem = x4_mem.mean()
-    kitsune_mem_mb = x1_mean_mem
-    tenko_mem_mb = x1_mean_mem + x2_mean_mem + x3_mean_mem + x4_mean_mem
+    kitsune_mem_obj = x1_mean_mem
+    tenko_mem_obj = x1_mean_mem + x2_mean_mem + x3_mean_mem + x4_mean_mem
 
-    print("\n" + "=" * 60)
+    # psutil RSS (process-level)
+    x1_mean_rss = x1_rss_aligned.mean() if len(x1_rss_aligned) else 0.0
+    x2_mean_rss = x2_rss_arr.mean()
+    kitsune_mem_rss = x1_mean_rss
+    tenko_mem_rss = x2_mean_rss
+
+    print("\n" + "=" * 75)
     print("TABLE IX: Computational and Memory Overhead (Mirai Botnet)")
-    print("=" * 60)
-    print(f"{'Metric':<16} {'Kitsune':>12} {'Tenko':>12}")
-    print(f"{'Latency (ms)':<16} {x1_mean_ms:>12.5f} {tenko_lat:>12.5f}")
-    print(f"{'Memory (MB)':<16} {kitsune_mem_mb:>12.4f} {tenko_mem_mb:>12.4f}")
-    print("=" * 60)
-    print(f"\nPer-layer breakdown:")
+    print("=" * 75)
+    print(f"{'Metric':<30} {'Kitsune':>12} {'Tenko':>12}")
+    print(f"{'-'*54}")
+    print(f"{'Latency (ms)':30s} {x1_mean_ms:>12.5f} {tenko_lat:>12.5f}")
+    print(f"{'Memory — deep_sizeof (MB)':30s} {kitsune_mem_obj:>12.4f} {tenko_mem_obj:>12.4f}")
+    print(f"{'Memory — RSS (MB)':30s} {kitsune_mem_rss:>12.2f} {tenko_mem_rss:>12.2f}")
+    print("=" * 75)
+    print(f"\nPer-layer breakdown (deep_sizeof):")
     print(f"  {'Layer':<20} {'Latency (ms)':>14} {'Memory (MB)':>14}")
     print(f"  {'-'*48}")
     print(f"  {'X1 (Autoencoder)':<20} {x1_mean_ms:>14.5f} {x1_mean_mem:>14.4f}")
@@ -167,7 +182,13 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
     print(f"  {'X3 (Thresholding)':<20} {x3_mean_ms:>14.5f} {x3_mean_mem:>14.4f}")
     print(f"  {'X4 (Ensemble)':<20} {x4_mean_ms:>14.5f} {x4_mean_mem:>14.4f}")
     print(f"  {'-'*48}")
-    print(f"  {'Total':<20} {tenko_lat:>14.5f} {tenko_mem_mb:>14.4f}")
+    print(f"  {'Total':<20} {tenko_lat:>14.5f} {tenko_mem_obj:>14.4f}")
+    print()
+    print(f"Per-layer breakdown (RSS — process-level):")
+    print(f"  {'Phase':<20} {'RSS (MB)':>14}")
+    print(f"  {'-'*34}")
+    print(f"  {'X1 (Kitsune)':20s} {x1_mean_rss:>14.2f}")
+    print(f"  {'X2+ (Tenko)':20s} {x2_mean_rss:>14.2f}")
 
 
 if __name__ == '__main__':
