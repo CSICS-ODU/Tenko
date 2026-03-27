@@ -28,6 +28,18 @@ import numpy
 from KitNET.utils import *
 import json
 
+import os as _os_da
+
+try:
+    from fastpath.da_fast import da_execute_rmse
+    _CYTHON_DA = True
+except ImportError:
+    da_execute_rmse = None
+    _CYTHON_DA = False
+
+if _os_da.environ.get("KITNET_DISABLE_CYTHON_DA", "").strip().lower() in ("1", "true", "yes"):
+    _CYTHON_DA = False
+
 class dA_params:
     def __init__(self,n_visible = 5, n_hidden = 3, lr=0.001, corruption_level=0.0, gracePeriod = 10000, hiddenRatio=None):
         self.n_visible = n_visible# num of units in visible (input) layer
@@ -115,6 +127,18 @@ class dA:
         if self.n < self.params.gracePeriod:
             return 0.0
         else:
+            if _CYTHON_DA:
+                xv = numpy.ascontiguousarray(x, dtype=numpy.float64)
+                return float(
+                    da_execute_rmse(
+                        xv,
+                        numpy.ascontiguousarray(self.norm_min, dtype=numpy.float64),
+                        numpy.ascontiguousarray(self.norm_max, dtype=numpy.float64),
+                        numpy.ascontiguousarray(self.W, dtype=numpy.float64),
+                        numpy.ascontiguousarray(self.hbias, dtype=numpy.float64),
+                        numpy.ascontiguousarray(self.vbias, dtype=numpy.float64),
+                    )
+                )
             # 0-1 normalize
             x = (x - self.norm_min) / (self.norm_max - self.norm_min + 0.0000000000000001)
             z = self.reconstruct(x)

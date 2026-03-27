@@ -1,6 +1,10 @@
 import numpy as np
-# import KitNET.dA as AE
-import KitNET.autoencoder as AE
+# Numpy dA backend (paper-style); use Torch ResAE via KitNET.autoencoder if you set KITNET_USE_TORCH=1
+import os as _os
+if _os.environ.get("KITNET_USE_TORCH", "").strip() in ("1", "true", "yes"):
+    import KitNET.autoencoder as AE  # PyTorch ResAE (slower on CPU for small nets)
+else:
+    import KitNET.dA as AE
 import KitNET.corClust as CC
 import pdb
 

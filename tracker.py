@@ -10,7 +10,7 @@ import pdb, traceback, time
 
 class scoreClass():
     """docstring for scores"""
-    def __init__(self, timestamp, n, d=1, timestep=10000, historyEpoch=100000, initial_key=0):
+    def __init__(self, timestamp, n, d=1, timestep=10000, historyEpoch=100000, initial_key=0, thread_safe=True):
         if d == 1:
             assert 0 <= n <= 1, "n must be in range [0, 1]!"
         self.timestamp        = timestamp
@@ -21,11 +21,16 @@ class scoreClass():
         self.denominator      = d
         self.finalized        = False
         self._key             = initial_key
-        self._key_lock        = threading.Lock()
+        self._thread_safe     = thread_safe
+        self._key_lock        = threading.Lock() if thread_safe else None
 
     def update_anamoly(self, current_timestamp, n):
         assert 0 <= n <= 1, "n must be in range [0, 1]!"
-        with self._key_lock:
+        if self._key_lock is not None:
+            with self._key_lock:
+                self.numerator += n
+                self.update_benign(current_timestamp)
+        else:
             self.numerator += n
             self.update_benign(current_timestamp)
 
@@ -37,12 +42,16 @@ class scoreClass():
         self.finalized = False
 
     def merge_history(self, other):
-        with self._key_lock:
+        if self._key_lock is not None:
+            with self._key_lock:
+                self.numerator   += other.numerator
+                self.denominator += other.denominator
+        else:
             self.numerator   += other.numerator
             self.denominator += other.denominator
 
     def decay_fraction(self, n):
-        with self._key_lock:
+        def _run():
             if self.numerator == 0:
                 return True
             k = 1 - (n/self.numerator)
@@ -54,6 +63,10 @@ class scoreClass():
             elif self.numerator < 0:
                 self.numerator = 0
             return self.numerator == 0
+        if self._key_lock is not None:
+            with self._key_lock:
+                return _run()
+        return _run()
 
     def set_score(self):
         self.finalized = True
@@ -83,13 +96,15 @@ class nodeScore():
     def __init__(self, max_length=100, mode='parallel',
                  name=None,
                 #  endpoint='http://172.21.219.232:7654/api/scores'):
-                endpoint='http://127.0.0.1:7654/api/scores'):
+                endpoint='http://127.0.0.1:7654/api/scores',
+                 thread_safe=True):
         self.max_length      = max_length
         self.scores          = dict()
         self.last_timestamp  = 0
         self.zeroed_node     = True
         self.endpoint        = endpoint
         self.mode            = mode
+        self._thread_safe    = thread_safe
         if name:
             self.name = name
         else:
@@ -107,7 +122,7 @@ class nodeScore():
                 self.zeroed_node = None
         except KeyError:
             if len(self.scores) < self.max_length:
-                self.scores[nodeId] = scoreClass(current_timestamp, n)
+                self.scores[nodeId] = scoreClass(current_timestamp, n, thread_safe=self._thread_safe)
                 self.lookup_from_blockchain([nodeId])
             else:
                 if not self.zeroed_node:
@@ -124,7 +139,7 @@ class nodeScore():
                     except Exception:
                         traceback.print_exc()
                         pdb.set_trace()
-                    self.scores[nodeId] = scoreClass(current_timestamp, n)
+                    self.scores[nodeId] = scoreClass(current_timestamp, n, thread_safe=self._thread_safe)
                     self.lookup_from_blockchain([nodeId])
                     self.zeroed_node = None
 
@@ -220,7 +235,7 @@ class nodeScore():
             ts = response_json['timestamp']
             n  = response_json['numerator']
             d  = response_json['denominator']
-            past_score = scoreClass(ts, n, d)
+            past_score = scoreClass(ts, n, d, thread_safe=self._thread_safe)
             try:
                 self.scores[identities[0]].merge_history(past_score)
             except KeyError:

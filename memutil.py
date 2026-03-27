@@ -51,3 +51,13 @@ def deep_sizeof(obj, _seen=None):
         size += deep_sizeof(vars(obj), _seen)
 
     return size
+
+
+def aggregate_deep_sizeof(*roots):
+    """Sum sizes of multiple object graphs with shared reference deduplication.
+
+    Use when measuring total logical footprint (e.g. several nn.Modules + numpy
+    buffers + threshold lists) so aliased objects are counted once.
+    """
+    _seen = set()
+    return sum(deep_sizeof(obj, _seen) for obj in roots)
