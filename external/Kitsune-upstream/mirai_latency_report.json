@@ -1,0 +1,39 @@
+{
+  "python": "3.13.3 (main, Apr  8 2025, 13:54:08) [Clang 16.0.0 (clang-1600.0.26.6)]",
+  "platform": "macOS-26.2-arm64-arm-64bit-Mach-O",
+  "kitsune_py_git": "7c8ea51e89268d9a20399dca4bf32d663e638eb4",
+  "mirai_tsv": "/Users/sahilb/Documents/Documents - TYCM19331-INT/github/improved-kitsune copy_exp2Skip/dataset/Mirai/Mirai_pcap.pcap.tsv",
+  "hyperparameters": {
+    "maxAE": 10,
+    "FMgrace": 5000,
+    "ADgrace": 50000
+  },
+  "packets_processed": 60000,
+  "build_time_s": 0.053469334030523896,
+  "loop_wall_time_s": 34.300359833054245,
+  "kitnet_execution_phase_ms": {
+    "n": 5000,
+    "mean_ms": 0.13419598799664528,
+    "median_ms": 0.13145804405212402,
+    "std_ms": 0.009865468820993767,
+    "p99_ms": 0.18021258758381017,
+    "implied_pps": 7451.787605043742
+  },
+  "fe_execution_phase_ms": {
+    "n": 5000,
+    "mean_ms": 0.5391082912217825,
+    "median_ms": 0.09275000775232911,
+    "std_ms": 2.854660770006553,
+    "p99_ms": 19.111351941246543,
+    "implied_pps": 1854.914896103151
+  },
+  "kitnet_all_packets_ms": {
+    "n": 60000,
+    "mean_ms": 0.2360265032776321,
+    "median_ms": 0.2602080348879099,
+    "std_ms": 0.08142028886005136,
+    "p99_ms": 0.357958326349035,
+    "implied_pps": 4236.81233299349
+  },
+  "note": "KitNET time = AnomDetector.process() only (matches paper Python scope). Paper throughput numbers are from C++; Python is slower per upstream README."
+}
