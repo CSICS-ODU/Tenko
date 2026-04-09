@@ -1,6 +1,7 @@
 #Check if cython code has been compiled
 import os
 import subprocess
+import time
 
 use_extrapolation=False #experimental correlation code
 if use_extrapolation:
@@ -19,6 +20,81 @@ import platform
 import subprocess
 import pdb
 
+# dpkt: fast C-extension packet parser (preferred for pcap path)
+try:
+    import dpkt as _dpkt
+    import socket as _socket
+    _HAS_DPKT = True
+except ImportError:
+    _HAS_DPKT = False
+
+PCAP_FILE = "dataset/Mirai/Mirai_pcap.pcap"
+
+
+def _parse_dpkt(ts, buf):
+    """Parse a raw pcap frame with dpkt.  Returns same tuple as Scapy path."""
+    try:
+        eth = _dpkt.ethernet.Ethernet(buf)
+    except Exception:
+        return None
+
+    framelen = len(buf)
+    timestamp = ts
+    try:
+        srcMAC = ':'.join('%02x' % b for b in eth.src)
+        dstMAC = ':'.join('%02x' % b for b in eth.dst)
+    except Exception:
+        srcMAC = dstMAC = ''
+
+    srcIP = dstIP = srcproto = dstproto = ''
+    IPtype = np.nan
+
+    ip_layer = eth.data
+    if isinstance(ip_layer, _dpkt.ip.IP):
+        IPtype = 0
+        try:
+            srcIP = _socket.inet_ntoa(ip_layer.src)
+            dstIP = _socket.inet_ntoa(ip_layer.dst)
+        except Exception:
+            pass
+        transport = ip_layer.data
+        if isinstance(transport, _dpkt.tcp.TCP):
+            srcproto = str(transport.sport)
+            dstproto = str(transport.dport)
+        elif isinstance(transport, _dpkt.udp.UDP):
+            srcproto = str(transport.sport)
+            dstproto = str(transport.dport)
+        elif isinstance(transport, _dpkt.icmp.ICMP):
+            srcproto = dstproto = 'icmp'
+    elif isinstance(ip_layer, _dpkt.ip6.IP6):
+        IPtype = 1
+        try:
+            srcIP = _socket.inet_ntop(_socket.AF_INET6, ip_layer.src)
+            dstIP = _socket.inet_ntop(_socket.AF_INET6, ip_layer.dst)
+        except Exception:
+            pass
+        transport = ip_layer.data
+        if isinstance(transport, _dpkt.tcp.TCP):
+            srcproto = str(transport.sport)
+            dstproto = str(transport.dport)
+        elif isinstance(transport, _dpkt.udp.UDP):
+            srcproto = str(transport.sport)
+            dstproto = str(transport.dport)
+    elif isinstance(ip_layer, _dpkt.arp.ARP):
+        IPtype = 0
+        srcproto = dstproto = 'arp'
+        try:
+            srcIP = _socket.inet_ntoa(ip_layer.spa)
+            dstIP = _socket.inet_ntoa(ip_layer.tpa)
+        except Exception:
+            pass
+
+    if srcproto == '' and srcIP == '':
+        srcIP = srcMAC
+        dstIP = dstMAC
+
+    return timestamp, framelen, srcMAC, dstMAC, srcIP, srcproto, dstIP, dstproto, IPtype
+
 
 #Extracts Kitsune features from given pcap file one packet at a time using "get_next_vector()"
 # If wireshark is installed (tshark) it is used to parse (it's faster), otherwise, scapy is used (much slower).
@@ -31,6 +107,8 @@ class FE:
         self.curPacketIndx = 0
         self.tsvin = None #used for parsing TSV file
         self.scapyin = None #used for parsing pcap with scapy
+        self._dpkt_f = None   # file handle for dpkt streaming reader
+        self._dpkt_reader = None
         
         ### Prep pcap ##
         self.__prep__()
@@ -68,13 +146,16 @@ class FE:
 
         ##If file is pcap
         elif type == "pcap" or type == 'pcapng':
-            # Try parsing via tshark dll of wireshark (faster)
-            if os.path.isfile(self._tshark):
-                
+            # Prefer dpkt for per-packet streaming (fast and no pre-loading)
+            if _HAS_DPKT and not os.environ.get("FE_FORCE_SCAPY"):
+                print("Using dpkt for pcap parsing (fast path)...")
+                self.parse_type = "dpkt"
+            # Try parsing via tshark dll of wireshark (still fast if available)
+            elif os.path.isfile(self._tshark):
                 self.pcap2tsv_with_tshark()  # creates local tsv file
                 self.path += ".tsv"
                 self.parse_type = "tsv"
-            else: # Otherwise, parse with scapy (slower)
+            else: # Fall back to Scapy (slower)
                 print("tshark not found. Trying scapy...")
                 self.parse_type = "scapy"
         else:
@@ -103,20 +184,46 @@ class FE:
             self.tsvin = csv.reader(self.tsvinf, delimiter='\t')
             row = self.tsvin.__next__() #move iterator past header
 
+        elif self.parse_type == "dpkt":
+            # Detect pcap vs pcapng by magic bytes
+            with open(self.path, 'rb') as _mf:
+                _magic = _mf.read(4)
+            self._is_pcapng = (_magic == b'\x0a\x0d\x0d\x0a')
+
+            def _make_reader(fh):
+                if self._is_pcapng:
+                    return _dpkt.pcapng.Reader(fh)
+                return _dpkt.pcap.Reader(fh)
+
+            print("Counting packets in pcap/pcapng (dpkt)...")
+            n_pkts = sum(1 for _ in _make_reader(open(self.path, 'rb')))
+            print(f"There are {n_pkts} Packets.")
+            self.limit = min(self.limit, n_pkts)
+            self._dpkt_f = open(self.path, 'rb')
+            self._dpkt_reader = iter(_make_reader(self._dpkt_f))
+            self._dpkt_make_reader = _make_reader
+
         else: # scapy
             print("Reading PCAP file via Scapy...")
             self.scapyin = rdpcap(self.path)
             self.limit = len(self.scapyin)
             print("Loaded " + str(len(self.scapyin)) + " Packets.")
 
-    def get_next_vector(self):
+    def get_next_vector(self, timings=None):
+        """
+        timings: optional dict with keys 'parse' and 'afterimage' — lists that
+                 receive per-packet latency in milliseconds when provided.
+        """
         if self.curPacketIndx == self.limit:
             if self.parse_type == 'tsv':
                 self.tsvinf.close()
+            elif self.parse_type == 'dpkt' and self._dpkt_f:
+                self._dpkt_f.close()
             return []
 
         ### Parse next packet ###
         if self.parse_type == "tsv":
+            t0 = time.perf_counter()
             row = self.tsvin.__next__()
             IPtype = np.nan
             timestamp = row[0]
@@ -131,7 +238,7 @@ class FE:
                 srcIP = row[17]
                 dstIP = row[18]
                 IPtype = 1
-            srcproto = row[6] + row[8]  # UDP or TCP port: the concatenation of the two port strings will will results in an OR "[tcp|udp]"
+            srcproto = row[6] + row[8]  # UDP or TCP port
             dstproto = row[7] + row[9]  # UDP or TCP port
             srcMAC = row[2]
             dstMAC = row[3]
@@ -149,8 +256,26 @@ class FE:
                 elif srcIP + srcproto + dstIP + dstproto == '':  # some other protocol
                     srcIP = row[2]  # src MAC
                     dstIP = row[3]  # dst MAC
+            t1 = time.perf_counter()
+
+        elif self.parse_type == "dpkt":
+            t0 = time.perf_counter()
+            try:
+                ts, buf = next(self._dpkt_reader)
+            except StopIteration:
+                return []
+            parsed = _parse_dpkt(ts, buf)
+            t1 = time.perf_counter()
+            if parsed is None:
+                self.curPacketIndx += 1
+                if timings is not None:
+                    timings['parse'].append((t1 - t0) * 1000.0)
+                    timings['afterimage'].append(0.0)
+                return []
+            timestamp, framelen, srcMAC, dstMAC, srcIP, srcproto, dstIP, dstproto, IPtype = parsed
 
         elif self.parse_type == "scapy":
+            t0 = time.perf_counter()
             packet = self.scapyin[self.curPacketIndx]
             IPtype = np.nan
             timestamp = packet.time
@@ -193,19 +318,27 @@ class FE:
                 elif srcIP + srcproto + dstIP + dstproto == '':  # some other protocol
                     srcIP = packet.src  # src MAC
                     dstIP = packet.dst  # dst MAC
+            t1 = time.perf_counter()
         else:
             return []
 
         self.curPacketIndx = self.curPacketIndx + 1
 
+        if timings is not None:
+            timings['parse'].append((t1 - t0) * 1000.0)
 
-        ### Extract Features
+        ### Extract Features (AfterImage)
         try:
-            # print('FE')
-            # pdb.set_trace()
-            return [self.nstat.updateGetStats(IPtype, srcMAC, dstMAC, srcIP, srcproto, dstIP, dstproto, int(framelen), float(timestamp)) , srcIP]
+            t_ai0 = time.perf_counter()
+            feat = self.nstat.updateGetStats(IPtype, srcMAC, dstMAC, srcIP, srcproto, dstIP, dstproto, int(framelen), float(timestamp))
+            t_ai1 = time.perf_counter()
+            if timings is not None:
+                timings['afterimage'].append((t_ai1 - t_ai0) * 1000.0)
+            return [feat, srcIP]
         except Exception as e:
             print(e)
+            if timings is not None:
+                timings['afterimage'].append(0.0)
             return []
 
 

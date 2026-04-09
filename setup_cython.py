@@ -14,6 +14,10 @@ extensions = [
         ["fastpath/score_fast.pyx"],
         include_dirs=[np.get_include()],
     ),
+    Extension(
+        "fastpath.afterimage_fast",
+        ["fastpath/afterimage_fast.pyx"],
+    ),
 ]
 
 setup(

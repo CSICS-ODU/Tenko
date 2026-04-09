@@ -1,5 +1,16 @@
 import math
 import numpy as np
+import os as _os
+
+# Use Cython-compiled AfterImage when available (set KITNET_DISABLE_CYTHON_AI=1 to revert)
+if not _os.environ.get("KITNET_DISABLE_CYTHON_AI"):
+    try:
+        from fastpath.afterimage_fast import incStat, incStat_cov, incStatDB
+        _CYTHON_AI = True
+    except ImportError:
+        _CYTHON_AI = False
+else:
+    _CYTHON_AI = False
 
 
 class incStat:

@@ -1,11 +1,16 @@
 import numpy as np
-## Prep AfterImage cython package
 import os
-import subprocess
-import pyximport
-pyximport.install()
-import AfterImage as af
-#import AfterImage_NDSS as af
+
+# Prefer Cython-compiled AfterImage; fall back to pure Python
+if not os.environ.get("KITNET_DISABLE_CYTHON_AI"):
+    try:
+        import fastpath.afterimage_fast as af
+    except ImportError:
+        import pyximport; pyximport.install()
+        import AfterImage as af
+else:
+    import pyximport; pyximport.install()
+    import AfterImage as af
 
 #
 # MIT License
@@ -54,6 +59,13 @@ class netStat:
         self.HT_H = af.incStatDB(limit=self.HostLimit) #Source Host BW Stats
         self.HT_Hp = af.incStatDB(limit=self.SessionLimit)#Source Host BW Stats
 
+        # Pre-allocated output arrays (avoid per-packet np.zeros allocation)
+        n = len(self.Lambdas)
+        self._MIstat    = np.empty(3 * n)
+        self._HHstat    = np.empty(7 * n)
+        self._HHstat_jit= np.empty(3 * n)
+        self._HpHpstat  = np.empty(7 * n)
+
 
     def findDirection(self,IPtype,srcIP,dstIP,eth_src,eth_dst): #cpp: this is all given to you in the direction string of the instance (NO NEED FOR THIS FUNCTION)
         if IPtype==0: #is IPv4
@@ -71,28 +83,25 @@ class netStat:
         return src_subnet, dst_subnet
 
     def updateGetStats(self, IPtype, srcMAC,dstMAC, srcIP, srcProtocol, dstIP, dstProtocol, datagramSize, timestamp):
-        # Host BW: Stats on the srcIP's general Sender Statistics
-        # Hstat = np.zeros((3*len(self.Lambdas,)))
-        # for i in range(len(self.Lambdas)):
-        #     Hstat[(i*3):((i+1)*3)] = self.HT_H.update_get_1D_Stats(srcIP, timestamp, datagramSize, self.Lambdas[i])
+        # Re-use pre-allocated arrays to avoid per-packet memory allocation
+        MIstat     = self._MIstat
+        HHstat     = self._HHstat
+        HHstat_jit = self._HHstat_jit
+        HpHpstat   = self._HpHpstat
 
         #MAC.IP: Stats on src MAC-IP relationships
-        MIstat =  np.zeros((3*len(self.Lambdas,)))
         for i in range(len(self.Lambdas)):
             MIstat[(i*3):((i+1)*3)] = self.HT_MI.update_get_1D_Stats(srcMAC+srcIP, timestamp, datagramSize, self.Lambdas[i])
 
         # Host-Host BW: Stats on the dual traffic behavior between srcIP and dstIP
-        HHstat =  np.zeros((7*len(self.Lambdas,)))
         for i in range(len(self.Lambdas)):
             HHstat[(i*7):((i+1)*7)] = self.HT_H.update_get_1D2D_Stats(srcIP, dstIP,timestamp,datagramSize,self.Lambdas[i])
 
         # Host-Host Jitter:
-        HHstat_jit =  np.zeros((3*len(self.Lambdas,)))
         for i in range(len(self.Lambdas)):
             HHstat_jit[(i*3):((i+1)*3)] = self.HT_jit.update_get_1D_Stats(srcIP+dstIP, timestamp, 0, self.Lambdas[i],isTypeDiff=True)
 
         # Host-Host BW: Stats on the dual traffic behavior between srcIP and dstIP
-        HpHpstat =  np.zeros((7*len(self.Lambdas,)))
         if srcProtocol == 'arp':
             for i in range(len(self.Lambdas)):
                 HpHpstat[(i*7):((i+1)*7)] = self.HT_Hp.update_get_1D2D_Stats(srcMAC, dstMAC, timestamp, datagramSize, self.Lambdas[i])
@@ -100,9 +109,7 @@ class netStat:
             for i in range(len(self.Lambdas)):
                 HpHpstat[(i*7):((i+1)*7)] = self.HT_Hp.update_get_1D2D_Stats(srcIP + srcProtocol, dstIP + dstProtocol, timestamp, datagramSize, self.Lambdas[i])
 
-        # import pdb; pdb.set_trace()
-
-        return np.concatenate((MIstat, HHstat, HHstat_jit, HpHpstat))  # concatenation of stats into one stat vector
+        return np.concatenate((MIstat, HHstat, HHstat_jit, HpHpstat))
 
     def getNetStatHeaders(self):
         MIstat_headers = []

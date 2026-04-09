@@ -37,7 +37,7 @@ args = parser.parse_args()
 def main(args):
     x_train, x_test, y_train, y_test = dp.prepare_data(scenario=args.dataset_name)
     x_slice, y_slice = dp.partition_array(x_data=x_test, y_data=y_test, slice_size=args.window_size)
-    predicitons, probs_list = Mateen_main.adaptive_ensemble(x_train, y_train, x_slice, y_slice, args)
+    predicitons, probs_list, _, _, _ = Mateen_main.adaptive_ensemble(x_train, y_train, x_slice, y_slice, args)
     _ = utils.getResult(y_test, predicitons)
     auc_rocs = utils.auc_roc_in_chunks(y_test, probs_list, chunk_size=args.window_size)
     print(f' Average AUC-ROC: {np.mean(auc_rocs)}, STD: {np.std(auc_rocs)}')

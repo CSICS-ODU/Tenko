@@ -50,6 +50,7 @@ AD_GRACE       = 50000
 TRAINING_END   = FM_GRACE + AD_GRACE   # 55,000  — KitNET fully trained
 BENIGN_LIMIT   = 100000                # X3/X4 centroid models warm up through here
 TSV_FILE       = "dataset/Mirai/Mirai_pcap.pcap.tsv"
+PCAP_FILE      = "dataset/Mirai/Mirai_pcap.pcap"
 MEMORY_SIZE    = 50                    # nodeScore sliding-window size
 
 # X3/X4 centroid defaults (tuned for <10 µs combined target)
@@ -164,6 +165,62 @@ def load_mirai_features(max_packets=None):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Step 1b: Measure feature extraction latency (packet parser + AfterImage)
+# Reads directly from the raw .pcap file — the real deployment path.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def measure_feature_extraction(max_packets=None, pcap_path=PCAP_FILE):
+    """
+    Measures per-packet latency for:
+      - Packet parser  (dpkt fast path, or Scapy fallback)
+      - AfterImage     (nstat.updateGetStats — incremental decay statistics)
+
+    Returns:
+      parse_lat_ms    : np.ndarray  per-packet parser latency (ms)
+      afterimage_lat_ms: np.ndarray per-packet AfterImage latency (ms)
+      parse_mode      : str         "dpkt" or "scapy"
+    """
+    from FeatureExtractor import FE, _HAS_DPKT
+
+    parse_mode = "dpkt" if _HAS_DPKT and not os.environ.get("FE_FORCE_SCAPY") else "scapy"
+
+    print("\n" + "=" * 66)
+    print("  MEASURING FEATURE EXTRACTION LATENCY")
+    print(f"  Input:  {pcap_path}")
+    print(f"  Parser: {parse_mode}")
+    print("=" * 66)
+
+    limit = max_packets if max_packets is not None else np.inf
+    fe = FE(pcap_path, limit)
+
+    timings = {'parse': [], 'afterimage': []}
+    n_done = 0
+    while True:
+        x = fe.get_next_vector(timings=timings)
+        if len(x) == 0:
+            break
+        n_done += 1
+        if n_done % 100_000 == 0:
+            print(f"  [{n_done:,}] parse avg={np.mean(timings['parse']):.5f} ms  "
+                  f"afterimage avg={np.mean(timings['afterimage']):.5f} ms")
+
+    parse_lat      = np.array(timings['parse'],      dtype=np.float64)
+    afterimage_lat = np.array(timings['afterimage'], dtype=np.float64)
+    total_lat      = parse_lat + afterimage_lat
+
+    print(f"\n  Packets measured: {n_done:,}")
+    print(f"\n  Packet parser ({parse_mode}):")
+    print(f"    Mean:   {np.mean(parse_lat):.5f} ms  |  Median: {np.median(parse_lat):.5f} ms  |  p95: {np.percentile(parse_lat,95):.5f} ms")
+    print(f"\n  AfterImage (nstat.updateGetStats):")
+    print(f"    Mean:   {np.mean(afterimage_lat):.5f} ms  |  Median: {np.median(afterimage_lat):.5f} ms  |  p95: {np.percentile(afterimage_lat,95):.5f} ms")
+    budget_fe = np.mean(total_lat)
+    met = "✓ UNDER" if budget_fe < 0.01 else "✗ OVER"
+    print(f"\n  FE total (parse + AfterImage): {budget_fe:.5f} ms  [{met} 0.01 ms target]")
+
+    return parse_lat, afterimage_lat, parse_mode
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Step 2: Full pipeline — train and execute, all 4 layers timed + memory
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -208,7 +265,8 @@ def measure_all_layers(
     print("=" * 66)
 
     # ── Phase 0: KitNET weight training (pkts 0 → TRAINING_END-1) ─────────────
-    # Not timed; just builds the AE ensemble weights.
+    # Timed per-packet: kitnet.train() includes both FM correlation updates
+    # (pkts 0–FM_GRACE-1) and AE SGD weight updates (pkts FM_GRACE–TRAINING_END-1).
     kitnet = KitNET(
         n=n_features,
         max_autoencoder_size=10,
@@ -221,11 +279,29 @@ def measure_all_layers(
     if max_train_packets is not None:
         train_end = min(train_end, int(max_train_packets))
 
-    for i in tqdm(range(train_end), desc="KitNET Weight Training"):
+    # deep_sizeof sampled every MEM_SAMPLE_INTERVAL packets (all phases share this)
+    MEM_SAMPLE_INTERVAL = 500
+
+    n_weight_train = train_end
+    wt_lat_x1  = np.empty(n_weight_train)
+    wt_mem_x1  = np.empty(n_weight_train)
+    _last_ds_wt = deep_sizeof(kitnet) / (1024 * 1024)
+
+    print(f"\n  Phase 0 — KitNET weight training ({n_weight_train:,} packets) …")
+    for i in tqdm(range(n_weight_train), desc="KitNET Weight Training"):
+        if i % MEM_SAMPLE_INTERVAL == 0:
+            _last_ds_wt = deep_sizeof(kitnet) / (1024 * 1024)
+        wt_mem_x1[i] = _last_ds_wt
+        t_wt0 = time.perf_counter()
         kitnet.train(features[i])
+        t_wt1 = time.perf_counter()
+        wt_lat_x1[i] = (t_wt1 - t_wt0) * 1000.0
 
     rss_after_kitnet = process.memory_info().rss / (1024 * 1024)
     print(f"  RSS after KitNET weight training: {rss_after_kitnet:.2f} MB")
+    print(f"  X1 train() — mean: {np.mean(wt_lat_x1):.5f} ms  "
+          f"median: {np.median(wt_lat_x1):.5f} ms  "
+          f"deep_sizeof: {np.mean(wt_mem_x1):.4f} MB")
 
     # ── Initialise X2 / X3 / X4 models ───────────────────────────────────────
     node_score = nodeScore(MEMORY_SIZE, mode='offline', thread_safe=node_thread_safe)
@@ -243,13 +319,15 @@ def measure_all_layers(
     calib_end   = min(BENIGN_LIMIT, len(features))
     n_calib     = calib_end - calib_start
 
+    train_lat_x1 = np.empty(n_calib)
     train_lat_x2 = np.empty(n_calib)
     train_lat_x3 = np.empty(n_calib)
     train_lat_x4 = np.empty(n_calib)
 
-    # deep_sizeof memory samples — measured every MEM_SAMPLE_INTERVAL packets
-    MEM_SAMPLE_INTERVAL = 500
+    # deep_sizeof memory — per-packet arrays for calibration phase
+    _last_ds_x1_train = deep_sizeof(kitnet) / (1024 * 1024)
     _last_ds_ns = aggregate_deep_sizeof(node_score, per_ip_recs, single_rec)
+    train_mem_x1 = np.empty(n_calib)
     train_mem_x2 = np.empty(n_calib)
     train_mem_x3 = np.empty(n_calib)
     train_mem_x4 = np.empty(n_calib)
@@ -258,7 +336,15 @@ def measure_all_layers(
     for idx in tqdm(range(n_calib), desc="Calibration Training"):
         i  = calib_start + idx
         ip = src_ips[i] if i < len(src_ips) else f"ip_{i}"
+
+        # ── X1: KitNET autoencoder (frozen weights — execute only) ───────────
+        if idx % MEM_SAMPLE_INTERVAL == 0:
+            _last_ds_x1_train = deep_sizeof(kitnet) / (1024 * 1024)
+        train_mem_x1[idx] = _last_ds_x1_train
+        t_x1_0   = time.perf_counter()
         rmse_raw  = kitnet.execute(features[i])
+        t_x1_1   = time.perf_counter()
+        train_lat_x1[idx] = (t_x1_1 - t_x1_0) * 1000.0
         rmse_clip = float(np.clip(rmse_raw, 0.0, 1.0))
 
         # ── X2 training ──────────────────────────────────────────────────────
@@ -425,10 +511,16 @@ def measure_all_layers(
     print(f"\n  X3+X4 combined mean: {x3x4_budget:.5f} ms  [{budget_met} 0.01 ms target]")
 
     return {
+        "weight_train": {
+            "lat_x1": wt_lat_x1,
+            "mem_x1": wt_mem_x1,
+        },
         "train": {
+            "lat_x1": train_lat_x1,
             "lat_x2": train_lat_x2,
             "lat_x3": train_lat_x3,
             "lat_x4": train_lat_x4,
+            "mem_x1": train_mem_x1,
             "mem_x2": train_mem_x2,
             "mem_x3": train_mem_x3,
             "mem_x4": train_mem_x4,
@@ -552,6 +644,8 @@ def main():
     p.add_argument("--max-test-packets",  type=int, default=None,
                    help="Limit execution-phase packets timed (default: all after BENIGN_LIMIT)")
     p.add_argument("--skip-mateen",  action="store_true")
+    p.add_argument("--skip-fe",      action="store_true",
+                   help="Skip feature-extraction latency measurement (pcap pass)")
     p.add_argument("--x3-window",    type=int, default=DEFAULT_X3_WINDOW,
                    help=f"X3 centroid window size (default {DEFAULT_X3_WINDOW})")
     p.add_argument("--x3-segments",  type=int, default=DEFAULT_X3_SEGMENTS,
@@ -564,6 +658,17 @@ def main():
     print(f"  Seed: {RANDOM_SEED}  |  X3 window={args.x3_window}  segments={args.x3_segments}")
     print("=" * 66)
 
+    # ── Feature extraction latency (separate pcap pass) ───────────────────────
+    if args.skip_fe:
+        fe_parse_lat = np.array([0.0])
+        fe_ai_lat    = np.array([0.0])
+        fe_mode      = "skipped"
+        print("\n  [Skipped FE measurement --skip-fe]")
+    else:
+        fe_parse_lat, fe_ai_lat, fe_mode = measure_feature_extraction(
+            max_packets=args.max_load_packets
+        )
+
     features, src_ips, n_features = load_mirai_features(max_packets=args.max_load_packets)
 
     R = measure_all_layers(
@@ -575,7 +680,7 @@ def main():
         x3_segments=args.x3_segments,
     )
 
-    TR, EX = R["train"], R["exec"]
+    WT, TR, EX = R["weight_train"], R["train"], R["exec"]
 
     if args.skip_mateen:
         mateen_lat = np.array([0.0])
@@ -587,9 +692,8 @@ def main():
          mateen_logical_inf, mateen_logical_adapt) = measure_mateen()
 
     # ── Compute layer totals ───────────────────────────────────────────────────
-    # Training phase: X1 is frozen (not timed) so Tenko_train = X2+X3+X4
-    # Execution phase: Tenko = X1+X2+X3+X4
-    train_tenko = TR["lat_x2"] + TR["lat_x3"] + TR["lat_x4"]
+    # Both phases: Tenko = X1+X2+X3+X4
+    train_tenko = TR["lat_x1"] + TR["lat_x2"] + TR["lat_x3"] + TR["lat_x4"]
     exec_kitsune = EX["lat_x1"]
     exec_tenko   = EX["lat_x1"] + EX["lat_x2"] + EX["lat_x3"] + EX["lat_x4"]
 
@@ -601,10 +705,18 @@ def main():
     out_path.parent.mkdir(exist_ok=True)
     np.savez_compressed(
         out_path,
-        # training phase
+        # feature extraction (parser + AfterImage) — separate pcap pass
+        fe_parse_lat=fe_parse_lat,
+        fe_afterimage_lat=fe_ai_lat,
+        # phase 0: KitNET weight training (pkts 0 → TRAINING_END-1)
+        wt_lat_x1=WT["lat_x1"],
+        wt_mem_x1=WT["mem_x1"],
+        # phase 1: calibration / score-model training (pkts TRAINING_END → BENIGN_LIMIT-1)
+        train_lat_x1=TR["lat_x1"],
         train_lat_x2=TR["lat_x2"], train_lat_x3=TR["lat_x3"], train_lat_x4=TR["lat_x4"],
+        train_mem_x1=TR["mem_x1"],
         train_mem_x2=TR["mem_x2"], train_mem_x3=TR["mem_x3"], train_mem_x4=TR["mem_x4"],
-        # execution phase
+        # phase 2: execution / inference phase (pkts BENIGN_LIMIT → end)
         exec_lat_x1=EX["lat_x1"], exec_lat_x2=EX["lat_x2"],
         exec_lat_x3=EX["lat_x3"], exec_lat_x4=EX["lat_x4"],
         exec_mem_x1=EX["mem_x1"], exec_mem_x2=EX["mem_x2"],
@@ -657,17 +769,53 @@ def main():
     print(f"  {'Kitsune total (=X1)':<28} {kit_exec:>10.5f} {kitsune_mem_mb:>22.4f}")
     print(f"  {'Tenko total (X1+X2+X3+X4)':<28} {tenk_exec:>10.5f} {tenko_mem_mb:>22.4f}")
 
-    print("\n  Layer breakdown — TRAINING phase (mean per calibration packet):")
+    print("\n  Layer breakdown — PHASE 0: KitNET weight training (pkts 0–54 999, per packet):")
     print(f"  {'Layer':<28} {'Lat (ms)':>10} {'Mem deep_sizeof (MB)':>22}")
     print(f"  {'-'*60}")
-    print(f"  {'X1 (frozen — not timed)':<28} {'—':>10} {'—':>22}")
+    print(f"  {'X1 kitnet.train()':<28} {np.mean(WT['lat_x1']):>10.5f} {np.mean(WT['mem_x1']):>22.4f}")
+    print(f"  {'  median':<28} {np.median(WT['lat_x1']):>10.5f}")
+    print(f"  {'  p95':<28} {np.percentile(WT['lat_x1'], 95):>10.5f}")
+    print(f"  {'-'*60}")
+
+    train_tenko_all = TR["lat_x1"] + TR["lat_x2"] + TR["lat_x3"] + TR["lat_x4"]
+    print("\n  Layer breakdown — PHASE 1: calibration (pkts 55 000–99 999, per packet):")
+    print(f"  {'Layer':<28} {'Lat (ms)':>10} {'Mem deep_sizeof (MB)':>22}")
+    print(f"  {'-'*60}")
+    print(f"  {'X1 (Autoencoder execute)':<28} {np.mean(TR['lat_x1']):>10.5f} {np.mean(TR['mem_x1']):>22.4f}")
     print(f"  {'X2 (Node Scoring train)':<28} {np.mean(TR['lat_x2']):>10.5f} {np.mean(TR['mem_x2']):>22.4f}")
     print(f"  {'X3 (Centroid train)':<28} {np.mean(TR['lat_x3']):>10.5f} {np.mean(TR['mem_x3']):>22.4f}")
     print(f"  {'X4 (Single centroid train)':<28} {np.mean(TR['lat_x4']):>10.5f} {np.mean(TR['mem_x4']):>22.4f}")
+    print(f"  {'-'*60}")
+    print(f"  {'Tenko total (calib)':<28} {np.mean(train_tenko_all):>10.5f} {(np.mean(TR['mem_x1'])+np.mean(TR['mem_x2'])+np.mean(TR['mem_x3'])+np.mean(TR['mem_x4'])):>22.4f}")
 
     print(f"\n  X3+X4 combined exec mean: {x3x4_combined:.5f} ms  "
           f"[<0.01 ms target: {budget_met}]")
     print(f"  Mateen — MEASURED: lat={mateen_mean:.5f} ms  (amort: {mateen_amort:.5f} ms)")
+
+    # ── Feature extraction summary ─────────────────────────────────────────────
+    fe_parse_mean = float(np.mean(fe_parse_lat))
+    fe_ai_mean    = float(np.mean(fe_ai_lat))
+    fe_total_mean = fe_parse_mean + fe_ai_mean
+    fe_budget_met = "YES" if fe_total_mean < 0.01 else "NO"
+
+    print(f"\n  Layer breakdown — FEATURE EXTRACTION (parser={fe_mode}, per packet):")
+    print(f"  {'Layer':<30} {'Lat (ms)':>10} {'p95 (ms)':>10} {'target':>8}")
+    print(f"  {'-'*58}")
+    if not args.skip_fe:
+        print(f"  {'Packet parser (' + fe_mode + ')':<30} "
+              f"{fe_parse_mean:>10.5f} "
+              f"{float(np.percentile(fe_parse_lat,95)):>10.5f}  "
+              f"{'✓' if fe_parse_mean < 0.01 else '✗'} <0.01ms")
+        print(f"  {'AfterImage (nstat)':<30} "
+              f"{fe_ai_mean:>10.5f} "
+              f"{float(np.percentile(fe_ai_lat,95)):>10.5f}  "
+              f"{'✓' if fe_ai_mean < 0.01 else '✗'} <0.01ms")
+        print(f"  {'-'*58}")
+        print(f"  {'FE total (parse+AfterImage)':<30} {fe_total_mean:>10.5f}  [<0.01 ms target: {fe_budget_met}]")
+        print(f"\n  Full stack (FE + Tenko X1+X2+X3+X4): {fe_total_mean + tenk_exec:.5f} ms  "
+              f"→ theoretical {1000.0/(fe_total_mean + tenk_exec):,.0f} pps")
+    else:
+        print(f"  (Skipped — run without --skip-fe to measure)")
 
 
 if __name__ == '__main__':

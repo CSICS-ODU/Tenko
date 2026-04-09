@@ -132,11 +132,11 @@ def adaptive_ensemble(x_train, y_train, x_slice, y_slice, args):
         data_slice = x_slice[i]
         label_slice = y_slice[i]
         if i+1 == len(x_slice):
-            return predicitons, probs_list
+            return predicitons, probs_list, models_list, threshold_list, benign_train
         if isit_shift(old_probs, probs, args.shift_threshold) == True:
             probs_vector = utils.get_features_error(selected_model, x_slice[i])
             models_list, threshold_list, selected_model, selected_threshold, benign_train, x_train, y_train = select_and_adapt(probs, probs_vector, data_slice, label_slice, models_list, threshold_list, benign_train, selected_model, y_pred, selected_threshold, x_train, y_train, args)
-    return predicitons, probs_list
+    return predicitons, probs_list, models_list, threshold_list, benign_train
 
 
 

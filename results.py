@@ -779,7 +779,16 @@ def get_adversarial_IPs_weighted_pattern(
 	weight_global: float = 0.5,       # Weight for the global pooled model's prediction
 	weight_single: float = 0.5,       # Weight for the single aggregate model's prediction
 	ensemble_threshold: float = 0.5   # Threshold for the final weighted prediction
-) -> tuple[list[int], list[int]]:
+) -> tuple[
+	list[int],
+	list[int],
+	list[float],
+	list[int],
+	list[int],
+	list[float],
+	list[int],
+	list[int],
+]:
 
 	benignLimit = 100000
 	FMgrace, ADgrace = 5000, 50000
@@ -807,12 +816,16 @@ def get_adversarial_IPs_weighted_pattern(
 	single_aggregate_recognizer = RMSEPatternRecognizerDist(
 		"SINGLE_AGGREGATE", pattern_window_size, pattern_segments, single_agg_tol_factor)
 
-	x2_times: List[float] = []
-	x2_memory: List[int] = []
-	x2_memory_rss: List[int] = []
-	_last_x2_mem = 0
-	_last_x2_rss = 0
+	x2_times_train: List[float] = []
+	x2_memory_train: List[int] = []
+	x2_memory_rss_train: List[int] = []
+	x2_times_exec: List[float] = []
+	x2_memory_exec: List[int] = []
+	x2_memory_rss_exec: List[int] = []
 	_x2_process = psutil.Process(os.getpid())
+	# X2 memory: node-scoring layer only (excludes pattern recognizers).
+	_last_x2_mem = deep_sizeof(node_score)
+	_last_x2_rss = _x2_process.memory_info().rss
 
 	# ─── Training Phase ───────────────────
 	print("Starting Training Phase...")
@@ -832,12 +845,12 @@ def get_adversarial_IPs_weighted_pattern(
 		single_aggregate_recognizer.update(score); single_aggregate_recognizer.learn_current_pattern()
 
 		_t1 = time.perf_counter()
-		x2_times.append(_t1 - _t0)
+		x2_times_train.append(_t1 - _t0)
 		if (i - train_start_idx) % 1000 == 0:
-			_last_x2_mem = deep_sizeof(node_score) + deep_sizeof(per_ip_recognizers) + deep_sizeof(single_aggregate_recognizer)
+			_last_x2_mem = deep_sizeof(node_score)
 			_last_x2_rss = _x2_process.memory_info().rss
-		x2_memory.append(_last_x2_mem)
-		x2_memory_rss.append(_last_x2_rss)
+		x2_memory_train.append(_last_x2_mem)
+		x2_memory_rss_train.append(_last_x2_rss)
 
 	# ─── Finalize Recognizers ──────────────────────────────────────────
 	print("Finalizing Recognizers...")
@@ -861,6 +874,9 @@ def get_adversarial_IPs_weighted_pattern(
 	if single_aggregate_recognizer.centroid is not None: print(f"Single Aggregate Model: Ready (Centroid {single_aggregate_recognizer.centroid.shape}, Tol {single_aggregate_recognizer.tol:.6f})")
 	else: print("[Warning] Single aggregate model failed finalize.")
 
+	_last_x2_mem = deep_sizeof(node_score)
+	_last_x2_rss = _x2_process.memory_info().rss
+
 	# ─── Testing Phase ─────────────────────────────────────────────────
 	print("Starting Testing Phase (Weighted Patterns)...")
 	gold = LABELS[benignLimit:]
@@ -870,7 +886,19 @@ def get_adversarial_IPs_weighted_pattern(
 	pred_scores = []    # Store the raw combined_score for ROC
 
 
-	if len(RMSEs_norm) <= benignLimit: print("[ERROR] No data points for testing."); return gold, []
+	if len(RMSEs_norm) <= benignLimit:
+		print("[ERROR] No data points for testing.")
+		return (
+			gold,
+			[],
+			x2_times_train,
+			x2_memory_train,
+			x2_memory_rss_train,
+			[],
+			[],
+			[],
+			[],
+		)
 
 	for i in tqdm(range(benignLimit, len(RMSEs_norm)), desc="Testing Weighted Patterns"):
 		ip, rmse_norm = IPs[i], RMSEs_norm[i]
@@ -907,12 +935,12 @@ def get_adversarial_IPs_weighted_pattern(
 		pred_weighted.append(weighted_pred)
 
 		_t1 = time.perf_counter()
-		x2_times.append(_t1 - _t0)
+		x2_times_exec.append(_t1 - _t0)
 		if (i - benignLimit) % 1000 == 0:
-			_last_x2_mem = deep_sizeof(node_score) + deep_sizeof(per_ip_recognizers) + deep_sizeof(single_aggregate_recognizer)
+			_last_x2_mem = deep_sizeof(node_score)
 			_last_x2_rss = _x2_process.memory_info().rss
-		x2_memory.append(_last_x2_mem)
-		x2_memory_rss.append(_last_x2_rss)
+		x2_memory_exec.append(_last_x2_mem)
+		x2_memory_rss_exec.append(_last_x2_rss)
 
 		# Periodic finalization (if required by tracker)
 		if (i - benignLimit + 1) % 100000 == 0:
@@ -986,8 +1014,19 @@ def get_adversarial_IPs_weighted_pattern(
 			# (Time series plot code omitted for brevity, but would use 'ensemble_name' in title)
 		except Exception as e: print(f"[ERROR] Visualization failed: {e}")
 
-	print(f"X2 layer data collected: {len(x2_times)} measurements")
-	return gold, final_pred_to_return, x2_times, x2_memory, x2_memory_rss
+	print(
+		f"X2 layer data collected: training={len(x2_times_train)}, execution={len(x2_times_exec)} measurements"
+	)
+	return (
+		gold,
+		final_pred_to_return,
+		x2_times_train,
+		x2_memory_train,
+		x2_memory_rss_train,
+		x2_times_exec,
+		x2_memory_exec,
+		x2_memory_rss_exec,
+	)
 
 ######################################################
 # Driver (Updated Example for Weighted Patterns)     #
@@ -1016,7 +1055,7 @@ def main():
 	w_s = 0.7
 	ens_T = 0.5 # Threshold still at 0.5, meaning if single fires (0.7*1=0.7), prediction is 1.
 
-	gold, pred_weighted, _, _, _ = get_adversarial_IPs_weighted_pattern(
+	gold, pred_weighted, *_x2 = get_adversarial_IPs_weighted_pattern(
 		IPs=IPs, IPd=IPd, LABELS=LABELS, RMSEs=RMSEs,
 		memorySize=40, blockchainMode='blocking',
 		pattern_window_size=30, pattern_segments=5,

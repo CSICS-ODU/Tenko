@@ -66,6 +66,7 @@ def evaluate(path = "mirai.pcap.tsv",
     x1_memory = []
     x1_memory_rss = []
     _process = psutil.Process(os.getpid())
+    test_flag_set = False
 
     load_precomputed =  False
 
@@ -118,7 +119,11 @@ def evaluate(path = "mirai.pcap.tsv",
                         pbar = tqdm(total=100000, leave=False)
                     else:
                         pbar = tqdm(total=packet_limit-FMgrace-ADgrace)#, leave=False)
-                
+
+                    if test_flag_set ==False:
+                        test_flag_set = True
+                        x1_memory = []
+
                 if i % 100000 == 0 and packet_limit == np.Inf:
                     pbar.close()
                     pbar = tqdm(total=100000, leave=False)
