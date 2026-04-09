@@ -102,8 +102,8 @@ class dA:
     def __init__(self, params):     
         self.params = params
         # for 0-1 normlaization
-        self.norm_max = np.ones((self.params.n_visible,)) * -np.Inf
-        self.norm_min = np.ones((self.params.n_visible,)) * np.Inf
+        self.norm_max = np.ones((self.params.n_visible,)) * -np.inf
+        self.norm_min = np.ones((self.params.n_visible,)) * np.inf
         self.n = 0    # epoch / packet count
 
         self.model = ResAE(self.params) # Use the new residual autoencoder

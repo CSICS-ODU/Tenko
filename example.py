@@ -53,7 +53,7 @@ def evaluate(path = "mirai.pcap.tsv",
     # File location
     # path = "mirai.pcap.tsv" #the pcap, pcapng, or tsv file to process.
     # path = "OS_Scan_pcap.pcapng"
-    packet_limit = np.Inf #the number of packets to process
+    packet_limit = np.inf #the number of packets to process
 
     # KitNET params:
     # maxAE = 10 #maximum size for any autoencoder in the ensemble layer
@@ -115,7 +115,7 @@ def evaluate(path = "mirai.pcap.tsv",
                 if i==FMgrace+ADgrace+2:              # Anamoly detector trained, now predicting 
                     pbar.close()
                     print(msg)
-                    if packet_limit == np.Inf:
+                    if packet_limit == np.inf:
                         pbar = tqdm(total=100000, leave=False)
                     else:
                         pbar = tqdm(total=packet_limit-FMgrace-ADgrace)#, leave=False)
@@ -124,7 +124,7 @@ def evaluate(path = "mirai.pcap.tsv",
                         test_flag_set = True
                         x1_memory = []
 
-                if i % 100000 == 0 and packet_limit == np.Inf:
+                if i % 100000 == 0 and packet_limit == np.inf:
                     pbar.close()
                     pbar = tqdm(total=100000, leave=False)
 
