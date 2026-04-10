@@ -24,6 +24,9 @@ Usage:
     python measure_all_latency.py [--skip-mateen] [--max-load-packets N]
                                   [--max-train-packets N] [--max-test-packets N]
                                   [--x3-window W] [--x3-segments S]
+
+  TSV load: pre-allocated matrix, default float32 (lower RAM vs list→float64).
+  Set TENKO_FEATURES_FP32=0 to use float64 (same numeric width as older runs).
 """
 
 import sys
@@ -143,6 +146,13 @@ class _CentroidRecognizer:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def load_mirai_features(max_packets=None):
+    """
+    Stream TSV through AfterImage into a single contiguous array.
+
+    Pre-allocation + float32 (default) cuts peak RAM vs list-of-rows then
+    np.array(..., float64). Latency phases still time only kitnet.train /
+    kitnet.execute / X2–X4 — this runs before any of that.
+    """
     from FeatureExtractor import FE
     print(f"Loading features from {TSV_FILE} via AfterImage …")
     limit = max_packets if max_packets is not None else np.inf
@@ -150,18 +160,41 @@ def load_mirai_features(max_packets=None):
     n_features = fe.get_num_features()
     print(f"  Feature dimensionality: {n_features}")
 
-    features, src_ips = [], []
+    cap = int(fe.limit)
+    if cap <= 0:
+        return np.empty((0, n_features), dtype=np.float32), [], n_features
+
+    use_fp32 = os.environ.get("TENKO_FEATURES_FP32", "1").strip().lower() not in (
+        "0", "false", "no",
+    )
+    dtype = np.float32 if use_fp32 else np.float64
+    print(f"  Feature matrix: pre-allocated {cap:,} x {n_features}  ({dtype.__name__})")
+
+    features = np.empty((cap, n_features), dtype=dtype, order="C")
+    src_ips = [None] * cap
+    count = 0
     while True:
         x = fe.get_next_vector()
         if len(x) == 0:
             break
-        src_ips.append(x[1])
-        features.append(x[0])
-        if len(features) % 100_000 == 0:
-            print(f"  Loaded {len(features):,} packets …")
+        vec = np.asarray(x[0], dtype=dtype).ravel()
+        if vec.size != n_features:
+            raise ValueError(
+                f"feature row length {vec.size} != n_features {n_features}"
+            )
+        features[count] = vec
+        src_ips[count] = x[1]
+        count += 1
+        if count % 100_000 == 0:
+            print(f"  Loaded {count:,} packets …")
 
-    print(f"  Total packets: {len(features):,}")
-    return np.array(features), src_ips, n_features
+    if count < cap:
+        features = np.ascontiguousarray(features[:count])
+    else:
+        features = features[:count]
+    src_ips = src_ips[:count]
+    print(f"  Total packets: {count:,}")
+    return features, src_ips, n_features
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
