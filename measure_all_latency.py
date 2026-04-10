@@ -583,6 +583,9 @@ def measure_mateen():
         x_train, y_train=y_train, num_epochs=100,
         mode="init", scenario="Mirai",
     )
+    os.makedirs("Models", exist_ok=True)
+    torch.save(model, "Models/Mirai.pth")
+    print("  Saved Models/Mirai.pth so adaptive_ensemble loads instead of retraining.")
     benign_train = x_train[y_train == 0]
     threshold    = mateen_utils.threshold_calulation(model, benign_train)
     os.chdir(orig_cwd)

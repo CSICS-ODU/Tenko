@@ -79,6 +79,12 @@ def measure_mateen_overhead():
     t_train_end = time.perf_counter()
     print(f"  Training time: {t_train_end - t_train_start:.2f} s")
 
+    # So adaptive_ensemble() does not train again from scratch (saves ~30+ min and RAM).
+    os.makedirs("Models", exist_ok=True)
+    ckpt = "Models/Mirai.pth"
+    torch.save(model, ckpt)
+    print(f"  Saved checkpoint → {ckpt} (adaptive_ensemble will load this, not retrain)")
+
     benign_train = x_train[y_train == 0]
     threshold = mateen_utils.threshold_calulation(model, benign_train)
     print(f"  Threshold: {threshold:.6f}")
@@ -115,27 +121,44 @@ def measure_mateen_overhead():
     latencies_ms = np.array(latencies_ms)
 
     # ── 5. Full adaptive pipeline (amortized, including adaptation) ───────────
-    print("\nRunning full adaptive_ensemble pipeline …")
-    x_slice, y_slice = dp.partition_array(x_test, y_test, slice_size=50000)
-
-    args_obj = type('args', (), {
-        'dataset_name': 'Mirai', 'window_size': 50000,
-        'performance_thres': 0.99, 'max_ensemble_length': 3,
-        'selection_budget': 0.01, 'mini_batch_size': 1000,
-        'retention_rate': 0.3, 'lambda_0': 0.1,
-        'shift_threshold': 0.05
-    })()
-
-    t_full_start = time.perf_counter()
-    preds, probs, models_list, threshold_list, benign_train_final = Mateen_main.adaptive_ensemble(
-        x_train, y_train, x_slice, y_slice, args_obj
+    skip_adaptive = os.environ.get("MATEEN_SKIP_ADAPTIVE", "").strip().lower() in (
+        "1", "true", "yes",
     )
-    t_full_end = time.perf_counter()
-    total_s = t_full_end - t_full_start
-    amortized_ms = (total_s / len(x_test)) * 1000
+    if skip_adaptive:
+        print(
+            "\nSkipping adaptive_ensemble (MATEEN_SKIP_ADAPTIVE=1). "
+            "Use on Pi 1GB to avoid OOM; run without it on a larger machine for amortized + F1."
+        )
+        total_s = 0.0
+        amortized_ms = float("nan")
+        mem_rss_adaptive = process.memory_info().rss / (1024 * 1024)
+        mem_obj_adaptive = mem_obj_inference
+        models_list = [model]
+        threshold_list = [threshold]
+        benign_train_final = benign_train
+        preds = None
+    else:
+        print("\nRunning full adaptive_ensemble pipeline …")
+        x_slice, y_slice = dp.partition_array(x_test, y_test, slice_size=50000)
 
-    mem_rss_adaptive = process.memory_info().rss / (1024 * 1024)
-    mem_obj_adaptive = aggregate_deep_sizeof(*models_list, threshold_list, benign_train_final) / (1024 * 1024)
+        args_obj = type('args', (), {
+            'dataset_name': 'Mirai', 'window_size': 50000,
+            'performance_thres': 0.99, 'max_ensemble_length': 3,
+            'selection_budget': 0.01, 'mini_batch_size': 1000,
+            'retention_rate': 0.3, 'lambda_0': 0.1,
+            'shift_threshold': 0.05
+        })()
+
+        t_full_start = time.perf_counter()
+        preds, probs, models_list, threshold_list, benign_train_final = Mateen_main.adaptive_ensemble(
+            x_train, y_train, x_slice, y_slice, args_obj
+        )
+        t_full_end = time.perf_counter()
+        total_s = t_full_end - t_full_start
+        amortized_ms = (total_s / len(x_test)) * 1000
+
+        mem_rss_adaptive = process.memory_info().rss / (1024 * 1024)
+        mem_obj_adaptive = aggregate_deep_sizeof(*models_list, threshold_list, benign_train_final) / (1024 * 1024)
 
     # ── 6. Results ────────────────────────────────────────────────────────────
     print("\n" + "=" * 70)
@@ -153,11 +176,16 @@ def measure_mateen_overhead():
     print(f"    Logical state (AE + benign_train + threshold): {mem_obj_inference:.4f} MB")
     print()
     print(f"  Amortized (with adaptation):")
-    print(f"    Total wall time:    {total_s:.2f} s")
-    print(f"    Amortized per-pkt:  {amortized_ms:.5f} ms")
+    if skip_adaptive:
+        print(f"    Total wall time:    (skipped)")
+        print(f"    Amortized per-pkt:  (skipped)")
+    else:
+        print(f"    Total wall time:    {total_s:.2f} s")
+        print(f"    Amortized per-pkt:  {amortized_ms:.5f} ms")
     print(f"    RSS (adaptive):     {mem_rss_adaptive:.2f} MB")
     print(f"    Logical state (full ensemble + buffers): {mem_obj_adaptive:.4f} MB")
-    _print_ensemble_breakdown(models_list, threshold_list, benign_train_final)
+    if not skip_adaptive:
+        _print_ensemble_breakdown(models_list, threshold_list, benign_train_final)
     print()
     print("=" * 70)
     print("  MATEEN SUMMARY")
@@ -165,7 +193,8 @@ def measure_mateen_overhead():
     print(f"  {'Metric':<30s} {'Value':>15s}")
     print(f"  {'-'*45}")
     print(f"  {'Latency (ms/pkt)':30s} {np.mean(latencies_ms):>15.5f}")
-    print(f"  {'Amortized Latency (ms/pkt)':30s} {amortized_ms:>15.5f}")
+    amort_str = f"{amortized_ms:>15.5f}" if not np.isnan(amortized_ms) else f"{'skipped':>15s}"
+    print(f"  {'Amortized Latency (ms/pkt)':30s} {amort_str}")
     print(f"  {'Memory — logical (inf) MB':30s} {mem_obj_inference:>15.4f}")
     print(f"  {'Memory — logical (adapt) MB':30s} {mem_obj_adaptive:>15.4f}")
     print(f"  {'Memory — RSS inf (MB)':30s} {mem_rss_inference:>15.2f}")
@@ -173,8 +202,9 @@ def measure_mateen_overhead():
     print("=" * 70)
 
     # ── 7. Classification metrics ─────────────────────────────────────────────
-    print("\nClassification metrics (full adaptive pipeline):")
-    mateen_utils.getResult(y_test, preds)
+    if preds is not None:
+        print("\nClassification metrics (full adaptive pipeline):")
+        mateen_utils.getResult(y_test, preds)
 
 
 if __name__ == '__main__':
