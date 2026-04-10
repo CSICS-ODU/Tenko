@@ -413,6 +413,13 @@ def measure_all_layers(
     if max_test_packets is not None:
         exec_end = min(exec_end, exec_start + int(max_test_packets))
     n_exec = exec_end - exec_start
+    if n_exec == 0:
+        print(
+            f"\n  [Warning] Execution phase has 0 packets: inference runs only for indices "
+            f">= BENIGN_LIMIT ({BENIGN_LIMIT}), but len(features)={len(features)}. "
+            f"Raise --max-load-packets above {BENIGN_LIMIT} (e.g. {BENIGN_LIMIT + 20000}) "
+            f"so packet index {BENIGN_LIMIT} exists; TABLE X exec rows will be NaN otherwise."
+        )
     print(f"\n  Phase 2 — Execution ({n_exec:,} packets) …")
 
     exec_lat_x1 = np.empty(n_exec)
