@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import random
@@ -23,15 +24,33 @@ getMSEvec = nn.MSELoss(reduction='none')
 def se2rmse(a):
     return torch.sqrt(sum(a.t())/a.shape[1])
 
-def threshold_calulation(model, x_data):
+def _rmse_per_sample(mse_vec):
+    """RMSE per row from element-wise MSE tensor [batch, features]."""
+    return torch.sqrt(torch.mean(mse_vec, dim=1)).detach().cpu().numpy()
+
+
+def threshold_calulation(model, x_data, batch_size=None):
+    """
+    95th-percentile RMSE threshold on benign data.
+    Batched forward to avoid OOM when x_data is large (e.g. Pi + full Mirai benign set).
+    Set MATEEN_THRESHOLD_BATCH (e.g. 128) on low-RAM devices.
+    """
+    if batch_size is None:
+        batch_size = int(os.environ.get("MATEEN_THRESHOLD_BATCH", "512"))
     model.eval()
-    output = model((torch.tensor(x_data).float()).to(device))
-    mse_vec = getMSEvec(output, torch.tensor(x_data).to(device))
-    rmse_vec = se2rmse(mse_vec).cpu().data.numpy()
-    thres = max(rmse_vec)
+    n = x_data.shape[0]
+    rmse_parts = []
+    with torch.no_grad():
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            xb = torch.from_numpy(x_data[start:end]).float().to(device)
+            output = model(xb)
+            mse_vec = getMSEvec(output, xb)
+            rmse_parts.append(_rmse_per_sample(mse_vec))
+    rmse_vec = np.concatenate(rmse_parts)
     rmse_vec.sort()
     pctg = 0.95
-    thres = rmse_vec[int(len(rmse_vec)*pctg)]
+    thres = rmse_vec[int(len(rmse_vec) * pctg)]
     return thres
     
 def preds_and_probs(model, threshold, X_test):

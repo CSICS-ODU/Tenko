@@ -42,7 +42,12 @@ def load_model(load_mode, input_shape, scenario, train_loader, data, num_epochs)
         model = model_update(data, num_epochs=num_epochs, model=model) 
     else:
         print(f"Loading pre-trained model from {model_path}")
-        model = torch.load(model_path).to(device)
+        # Full pickled module (AE.autoencoder); PyTorch 2.6+ defaults weights_only=True.
+        try:
+            model = torch.load(model_path, map_location=device, weights_only=False)
+        except TypeError:
+            model = torch.load(model_path, map_location=device)
+        model = model.to(device)
     return model
           
     
