@@ -27,16 +27,20 @@ Usage:
 
   TSV load: pre-allocated matrix, default float32 (lower RAM vs list→float64).
   Set TENKO_FEATURES_FP32=0 to use float64 (same numeric width as older runs).
+  Compact uint32 node IDs (no per-packet IP strings). Per-layer latency arrays
+  default float32 (TENKO_LAT_ARRAY_FLOAT32=0 for float64). Exec-phase deep_sizeof
+  sampled every MEM_SAMPLE_INTERVAL like calibration (same perf_counter windows).
 """
 
 import sys
 import os
+import gc
 import time
 import psutil
 import numpy as np
 from collections import deque
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, Union, List, Any
 from tqdm import tqdm
 
 sys.path.insert(0, 'KitNET')
@@ -64,6 +68,15 @@ DEFAULT_X3_SEGMENTS = 5    # Segments used to build the pattern vector
 W_GLOBAL            = 0.5
 W_SINGLE            = 0.5
 ENSEMBLE_THRESHOLD  = 0.5
+
+
+def _node_key(src_ips: Union[np.ndarray, List[Any]], i: int):
+    """Dict key for nodeScore / per_ip_recs (int id or legacy str)."""
+    if isinstance(src_ips, np.ndarray):
+        return int(src_ips[i])
+    if i < len(src_ips):
+        return src_ips[i]
+    return f"ip_{i}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -162,7 +175,8 @@ def load_mirai_features(max_packets=None):
 
     cap = int(fe.limit)
     if cap <= 0:
-        return np.empty((0, n_features), dtype=np.float32), [], n_features
+        z = np.empty((0,), dtype=np.uint32)
+        return np.empty((0, n_features), dtype=np.float32), z, n_features
 
     use_fp32 = os.environ.get("TENKO_FEATURES_FP32", "1").strip().lower() not in (
         "0", "false", "no",
@@ -171,7 +185,9 @@ def load_mirai_features(max_packets=None):
     print(f"  Feature matrix: pre-allocated {cap:,} x {n_features}  ({dtype.__name__})")
 
     features = np.empty((cap, n_features), dtype=dtype, order="C")
-    src_ips = [None] * cap
+    ip_ids = np.empty(cap, dtype=np.uint32)
+    ip_intern: Dict[Any, int] = {}
+    next_id = 0
     count = 0
     while True:
         x = fe.get_next_vector()
@@ -183,18 +199,28 @@ def load_mirai_features(max_packets=None):
                 f"feature row length {vec.size} != n_features {n_features}"
             )
         features[count] = vec
-        src_ips[count] = x[1]
+        key = x[1]
+        if key not in ip_intern:
+            if next_id >= 0xFFFFFFFF:
+                raise OverflowError("more than 2^32-1 unique source IPs")
+            ip_intern[key] = next_id
+            next_id += 1
+        ip_ids[count] = ip_intern[key]
         count += 1
         if count % 100_000 == 0:
             print(f"  Loaded {count:,} packets …")
+
+    del ip_intern
+    if os.environ.get("TENKO_GC_AFTER_LOAD", "").strip().lower() in ("1", "true", "yes"):
+        gc.collect()
 
     if count < cap:
         features = np.ascontiguousarray(features[:count])
     else:
         features = features[:count]
-    src_ips = src_ips[:count]
-    print(f"  Total packets: {count:,}")
-    return features, src_ips, n_features
+    ip_ids = ip_ids[:count]
+    print(f"  Total packets: {count:,}  |  unique node IDs: {int(ip_ids.max()) + 1 if count else 0:,}")
+    return features, ip_ids, n_features
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -258,7 +284,9 @@ def measure_feature_extraction(max_packets=None, pcap_path=PCAP_FILE):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def measure_all_layers(
-    features, src_ips, n_features,
+    features,
+    src_ips: Union[np.ndarray, List[Any]],
+    n_features,
     max_train_packets=None,
     max_test_packets=None,
     node_thread_safe=False,
@@ -279,7 +307,7 @@ def measure_all_layers(
       X1, X2, X3, X4 all timed.
 
     Memory is reported as deep_sizeof (logical MB), sampled every 500 packets
-    during training and every packet during execution.
+    in all phases (including execution — X2/X3/X4 mem rows are hold-forward samples).
 
     Returns a dict with 'train' and 'exec' sub-dicts each containing:
       lat_{x1..x4}_ms  : np.ndarray  per-packet latencies (ms)
@@ -314,10 +342,16 @@ def measure_all_layers(
 
     # deep_sizeof sampled every MEM_SAMPLE_INTERVAL packets (all phases share this)
     MEM_SAMPLE_INTERVAL = 500
+    lat_dt = (
+        np.float32
+        if os.environ.get("TENKO_LAT_ARRAY_FLOAT32", "1").strip().lower()
+        not in ("0", "false", "no")
+        else np.float64
+    )
 
     n_weight_train = train_end
-    wt_lat_x1  = np.empty(n_weight_train)
-    wt_mem_x1  = np.empty(n_weight_train)
+    wt_lat_x1  = np.empty(n_weight_train, dtype=lat_dt)
+    wt_mem_x1  = np.empty(n_weight_train, dtype=lat_dt)
     _last_ds_wt = deep_sizeof(kitnet) / (1024 * 1024)
 
     print(f"\n  Phase 0 — KitNET weight training ({n_weight_train:,} packets) …")
@@ -352,23 +386,23 @@ def measure_all_layers(
     calib_end   = min(BENIGN_LIMIT, len(features))
     n_calib     = calib_end - calib_start
 
-    train_lat_x1 = np.empty(n_calib)
-    train_lat_x2 = np.empty(n_calib)
-    train_lat_x3 = np.empty(n_calib)
-    train_lat_x4 = np.empty(n_calib)
+    train_lat_x1 = np.empty(n_calib, dtype=lat_dt)
+    train_lat_x2 = np.empty(n_calib, dtype=lat_dt)
+    train_lat_x3 = np.empty(n_calib, dtype=lat_dt)
+    train_lat_x4 = np.empty(n_calib, dtype=lat_dt)
 
     # deep_sizeof memory — per-packet arrays for calibration phase
     _last_ds_x1_train = deep_sizeof(kitnet) / (1024 * 1024)
     _last_ds_ns = aggregate_deep_sizeof(node_score, per_ip_recs, single_rec)
-    train_mem_x1 = np.empty(n_calib)
-    train_mem_x2 = np.empty(n_calib)
-    train_mem_x3 = np.empty(n_calib)
-    train_mem_x4 = np.empty(n_calib)
+    train_mem_x1 = np.empty(n_calib, dtype=lat_dt)
+    train_mem_x2 = np.empty(n_calib, dtype=lat_dt)
+    train_mem_x3 = np.empty(n_calib, dtype=lat_dt)
+    train_mem_x4 = np.empty(n_calib, dtype=lat_dt)
 
     print(f"\n  Phase 1 — Calibration training ({n_calib:,} packets) …")
     for idx in tqdm(range(n_calib), desc="Calibration Training"):
         i  = calib_start + idx
-        ip = src_ips[i] if i < len(src_ips) else f"ip_{i}"
+        ip = _node_key(src_ips, i)
 
         # ── X1: KitNET autoencoder (frozen weights — execute only) ───────────
         if idx % MEM_SAMPLE_INTERVAL == 0:
@@ -455,21 +489,24 @@ def measure_all_layers(
         )
     print(f"\n  Phase 2 — Execution ({n_exec:,} packets) …")
 
-    exec_lat_x1 = np.empty(n_exec)
-    exec_lat_x2 = np.empty(n_exec)
-    exec_lat_x3 = np.empty(n_exec)
-    exec_lat_x4 = np.empty(n_exec)
+    exec_lat_x1 = np.empty(n_exec, dtype=lat_dt)
+    exec_lat_x2 = np.empty(n_exec, dtype=lat_dt)
+    exec_lat_x3 = np.empty(n_exec, dtype=lat_dt)
+    exec_lat_x4 = np.empty(n_exec, dtype=lat_dt)
 
-    exec_mem_x1 = np.empty(n_exec)
-    exec_mem_x2 = np.empty(n_exec)
-    exec_mem_x3 = np.empty(n_exec)
-    exec_mem_x4 = np.empty(n_exec)
+    exec_mem_x1 = np.empty(n_exec, dtype=lat_dt)
+    exec_mem_x2 = np.empty(n_exec, dtype=lat_dt)
+    exec_mem_x3 = np.empty(n_exec, dtype=lat_dt)
+    exec_mem_x4 = np.empty(n_exec, dtype=lat_dt)
 
     _last_ds_exec = deep_sizeof(kitnet) / (1024 * 1024)
+    _last_ds_x2 = deep_sizeof(node_score) / (1024 * 1024)
+    _last_ds_x3 = deep_sizeof(per_ip_recs) / (1024 * 1024)
+    _last_ds_x4 = deep_sizeof(single_rec) / (1024 * 1024)
 
     for idx in tqdm(range(n_exec), desc="X1+X2+X3+X4 Inference"):
         i  = exec_start + idx
-        ip = src_ips[i] if i < len(src_ips) else f"ip_{i}"
+        ip = _node_key(src_ips, i)
 
         # ── X1: KitNET autoencoder ────────────────────────────────────────────
         t0 = time.perf_counter()
@@ -478,12 +515,14 @@ def measure_all_layers(
         exec_lat_x1[idx] = (t1 - t0) * 1000.0
         if idx % MEM_SAMPLE_INTERVAL == 0:
             _last_ds_exec = deep_sizeof(kitnet) / (1024 * 1024)
+            _last_ds_x2 = deep_sizeof(node_score) / (1024 * 1024)
+            _last_ds_x3 = deep_sizeof(per_ip_recs) / (1024 * 1024)
+            _last_ds_x4 = deep_sizeof(single_rec) / (1024 * 1024)
         exec_mem_x1[idx] = _last_ds_exec
 
         rmse_clip = float(np.clip(rmse_raw, 0.0, 1.0))
 
         # ── X2: Node scoring ──────────────────────────────────────────────────
-        _last_ds_x2 = deep_sizeof(node_score) / (1024 * 1024)
         t2 = time.perf_counter()
         node_score.update(ip, i, rmse_clip)
         try:
@@ -495,7 +534,6 @@ def measure_all_layers(
         exec_mem_x2[idx] = _last_ds_x2
 
         # ── X3: Per-IP centroid distance check ────────────────────────────────
-        _last_ds_x3 = deep_sizeof(per_ip_recs) / (1024 * 1024)
         t4 = time.perf_counter()
         if ip not in per_ip_recs:
             per_ip_recs[ip] = _CentroidRecognizer(x3_window, x3_segments, x3_tol_factor)
@@ -510,7 +548,6 @@ def measure_all_layers(
         exec_mem_x3[idx] = _last_ds_x3
 
         # ── X4: Weighted ensemble decision ────────────────────────────────────
-        _last_ds_x4 = deep_sizeof(single_rec) / (1024 * 1024)
         t6 = time.perf_counter()
         single_rec.update(score)
         flag_single = (not single_rec.is_known())
