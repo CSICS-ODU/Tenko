@@ -1,25 +1,15 @@
 #!/usr/bin/env python3
-"""TASK 3 -- fully OUT-OF-SAMPLE eta recalibration for CICIoT2023.
+"""Eta recalibration with a CALIB/EVAL split of the benign_test region.
 
-Fixes the in-sample FPR caveat of recalibrate_ciciot2023.py, where eta was fit on
-benign_test and FPR was then measured on that SAME benign_test (definitional).
-
-Protocol (no attack labels used anywhere in eta selection):
-  benign_test region = arr indices [0 : n_test]      (0=benign, contiguous same-trace)
+Protocol (no attack labels used in eta selection):
+  benign_test region = arr indices [0 : n_test]
   attack region      = arr indices [n_test : n_test+n_attack]
-  CALIB  = first half of benign_test  [0 : n_test//2]      <- eta selected here ONLY
-  EVAL   = second half of benign_test [n_test//2 : n_test]  <- held-out benign, disjoint
+  CALIB  = first half of benign_test  [0 : n_test//2]
+  EVAL   = second half of benign_test [n_test//2 : n_test]
 
-Steps per (attack, tanh variant, FPR target):
-  1. On CALIB, find a shared benign quantile q such that the committed FUSED rule
-     ((nd_g>eta_g) OR (nd_s>eta_s)) hits the target benign FPR. eta_g=Q(calib_ndg,q),
-     eta_s=Q(calib_nds,q). (identical calibrator to the in-sample script, different data)
-  2. HONEST test set = held-out EVAL benign (negatives) + attack (positives).
-     Report held-out benign FPR (the honest number) and TPR/Precision/F1 there.
-  3. AUC/EER threshold-independent, computed on the SAME honest EVAL+attack set.
-
-Writes results/CICIoT2023/ciciot2023_metrics_recalibrated_oos.csv and prints tables,
-including the shift vs the in-sample version (recalibrate_ciciot2023.py output).
+On CALIB, pick shared quantile q for ((nd_g>eta_g) OR (nd_s>eta_s)) at the
+target FPR; evaluate on EVAL benign + attack. Writes
+results/CICIoT2023/ciciot2023_metrics_recalibrated_oos.csv.
 """
 from __future__ import annotations
 import csv
@@ -85,8 +75,7 @@ def calibrate_shared_quantile(cal_ndg, cal_nds, target_fpr):
 
 def main():
     counts = pd.read_csv(f"{OUT}/stream_counts.csv").set_index("attack")
-    # in-sample reference (double-tanh) to report the shift
-    insample = pd.read_csv(f"{OUT}/ciciot2023_metrics_recalibrated.csv")
+    ref = pd.read_csv(f"{OUT}/ciciot2023_metrics_recalibrated.csv")
 
     rows = []
     for a in ATTACKS:
@@ -100,10 +89,7 @@ def main():
             assert len(g) == n_test + n_atk, f"{a}/{tag} len mismatch"
 
             atk_ndg, atk_nds = ndg[n_test:], nds[n_test:]
-            # benign_test is non-stationary (warm-up transient in the first packets),
-            # so the honest held-out FPR is split-direction sensitive. Report BOTH:
-            #   fwd: calibrate on first half, evaluate held-out on second half
-            #   rev: calibrate on second half, evaluate held-out on first half
+            # fwd: calib first half / eval second; rev: swapped.
             splits = {
                 "fwd": ((slice(0, half)), (slice(half, n_test))),
                 "rev": ((slice(half, n_test)), (slice(0, half))),
@@ -124,14 +110,13 @@ def main():
                     pred_oos = ((hg > eg) | (hs > es)).astype(int)
                     pm = point_metrics(gold_oos, pred_oos)
 
-                    # shift vs in-sample (double variant reference)
-                    ins = insample[(insample.attack == a) &
-                                   (np.isclose(insample.target_benign_fpr, target))]
-                    d_tpr = d_f1 = ins_tpr = ins_f1 = float("nan")
-                    if len(ins):
-                        ins_tpr = float(ins.iloc[0]["TPR"]); ins_f1 = float(ins.iloc[0]["F1"])
-                        d_tpr = pm["tpr"] - ins_tpr
-                        d_f1 = pm["f1"] - ins_f1
+                    ref_row = ref[(ref.attack == a) &
+                                  (np.isclose(ref.target_benign_fpr, target))]
+                    d_tpr = d_f1 = ref_tpr = ref_f1 = float("nan")
+                    if len(ref_row):
+                        ref_tpr = float(ref_row.iloc[0]["TPR"]); ref_f1 = float(ref_row.iloc[0]["F1"])
+                        d_tpr = pm["tpr"] - ref_tpr
+                        d_f1 = pm["f1"] - ref_f1
 
                     rows.append({
                         "attack": a, "variant": tag, "split": split_name,
@@ -144,8 +129,8 @@ def main():
                         "F1": pm["f1"], "AUC": a_auc, "EER": a_eer,
                         "n_calib_benign": len(cal_ndg), "n_eval_benign": n_eval,
                         "n_attack": n_atk, "benignLimit": benignLimit,
-                        "insample_TPR": ins_tpr, "insample_F1": ins_f1,
-                        "dTPR_vs_insample": d_tpr, "dF1_vs_insample": d_f1,
+                        "ref_TPR": ref_tpr, "ref_F1": ref_f1,
+                        "dTPR_vs_ref": d_tpr, "dF1_vs_ref": d_f1,
                     })
 
     df = pd.DataFrame(rows)
@@ -161,10 +146,10 @@ def main():
             print(sub[["attack", "target_benign_fpr", "eta_global", "eta_node",
                        "calib_benign_fpr", "heldout_benign_fpr", "heldout_fpr_minus_target",
                        "TPR", "FPR", "Precision", "F1", "AUC", "EER"]].to_string(index=False))
-    print("\n===== shift vs in-sample (double-tanh, fwd split) =====")
+    print("\n===== shift vs prior calib CSV (double-tanh, fwd split) =====")
     print(df[(df.variant == "double") & (df.split == "fwd")][["attack", "target_benign_fpr",
-          "insample_TPR", "TPR", "dTPR_vs_insample",
-          "insample_F1", "F1", "dF1_vs_insample"]].to_string(index=False))
+          "ref_TPR", "TPR", "dTPR_vs_ref",
+          "ref_F1", "F1", "dF1_vs_ref"]].to_string(index=False))
     print("\nwrote:", f"{OUT}/ciciot2023_metrics_recalibrated_oos.csv")
 
 

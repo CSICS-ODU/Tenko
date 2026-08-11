@@ -4,18 +4,16 @@
 For each per-attack stream ([benign_lead][benign_test][attack]) this:
   1. Runs X1 (KitNET) to get per-packet RMSEs (raw + tanh), with strict
      RMSE<->packet<->label alignment (never breaks mid-stream on a parse error).
-  2. Runs the Kitsune baseline: score = tanh(RMSE), benign-derived Median+MAD
-     threshold from the calibration region, evaluated on the TEST region only.
+  2. Runs the Kitsune baseline: score = tanh(RMSE), Median+MAD threshold from
+     the train-prefix calibration region, evaluated on the TEST region only.
   3. Runs Tenko X2-X4 via results.get_adversarial_IPs_weighted_pattern with
      benignLimit set to the benign_lead length (so the TEST region is
      benign_test negatives + attack positives).
   4. Computes TPR/FPR/Precision/F1 (point) and AUC/EER (threshold-independent)
      for both models and appends rows to a summary CSV.
 
-Faithfulness note: the committed pipeline applies tanh twice for Tenko
-(example.py stores tanh(raw) in RMSEs.pkl; results.py:809 applies tanh again).
-We reproduce that exactly by feeding tanh(raw) into the Tenko function. The
-Kitsune baseline uses a single tanh (raw per-packet tanh(RMSE)), per the task.
+Default --tanh single matches the mixed-stream Table X path (feed raw RMSE;
+results.py applies one tanh). Use --tanh double for tanh(tanh(raw)).
 """
 from __future__ import annotations
 
@@ -126,7 +124,7 @@ def kitsune_baseline(rmse_tanh, labels, benignLimit):
 
 
 def run_attack(attack: str, writer, fh, breakdown_writer=None, use_cached_rmse=False,
-               tanh_mode="double", tag="double"):
+               tanh_mode="single", tag="single"):
     tsv = os.path.join(BIG_DIR, f"stream_{attack}.pcap.tsv")
     lab = os.path.join(OUT_DIR, f"labels_{attack}.csv")
     print(f"\n================ {attack} ================")
@@ -163,19 +161,16 @@ def run_attack(attack: str, writer, fh, breakdown_writer=None, use_cached_rmse=F
     assert len(rmse_raw) == n_pkts, f"RMSE/packet misalignment {len(rmse_raw)} vs {n_pkts}"
     rmse_tanh1 = np.tanh(rmse_raw)                    # == what example.py stores (single tanh)
 
-    # Tenko input depends on the tanh variant:
-    #   double  -> feed tanh(raw); results.py applies tanh again == committed pipeline (tanh(tanh(raw)))
-    #   single  -> feed raw; results.py's single tanh is the ONLY normalization (tanh(raw))
+    # single: feed raw (results.py applies tanh once); double: feed tanh(raw).
     tenko_input = rmse_tanh1 if tanh_mode == "double" else rmse_raw
 
-    # ---- Kitsune baseline (single tanh, Median+MAD threshold) -- variant-independent ----
     kpm, kgold, kscores = kitsune_baseline(rmse_tanh1, labels, benignLimit)
     print(f"  [Kitsune] thr={kpm['threshold']:.6f} (med={kpm['median']:.6f}, mad={kpm['mad']:.6e}) "
           f"TPR={kpm['tpr']:.4f} FPR={kpm['fpr']:.4f} P={kpm['precision']:.4f} "
           f"F1={kpm['f1']:.4f} AUC={kpm['auc']:.4f} EER={kpm['eer']:.4f}")
     np.save(os.path.join(OUT_DIR, f"kitsune_testscores_{attack}.npy"), kscores)
 
-    # ---- Tenko X2-X4 (feed tanh(raw); function applies tanh again == committed) ----
+    # ---- Tenko X2-X4 ----
     out = R.get_adversarial_IPs_weighted_pattern(
         IPs=IPs, IPd=IPd, LABELS=labels, RMSEs=list(tenko_input),
         memorySize=60, blockchainMode="offline",
@@ -241,8 +236,8 @@ def main():
     ap.add_argument("--attacks", default="all", help="comma-separated attack names or 'all'")
     ap.add_argument("--use-cached-rmse", action="store_true",
                     help="load cached rmse_raw_<attack>.npy instead of re-running X1")
-    ap.add_argument("--tanh", choices=["double", "single"], default="double",
-                    help="double = committed tanh(tanh(raw)); single = tanh(raw) only")
+    ap.add_argument("--tanh", choices=["double", "single"], default="single",
+                    help="single = tanh(raw); double = tanh(tanh(raw))")
     args = ap.parse_args()
     attacks = ATTACKS if args.attacks == "all" else args.attacks.split(",")
     tag = args.tanh

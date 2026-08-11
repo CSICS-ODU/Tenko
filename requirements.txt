@@ -1,45 +1,27 @@
-# Tenko — public runtime requirements (curated top-level dependencies)
-# ---------------------------------------------------------------------
-# Python: 3.14.5   (tested in the repo `.venv`)
-# Versions below are pinned to the versions actually present in that venv
-# (see requirements.lock.txt for the full, transitive-inclusive lock).
+# Tenko — tested environment pins (Python 3.14.x in repo .venv).
+# Optional full freeze: requirements.lock.txt (transitive-inclusive).
 #
-# NOTE: The committed requirements.txt is STALE (it pins numpy 1.26.4 for
-# Python 3.9-era). This file reflects the real, working environment
-# (numpy 2.x on Python 3.14). This file is now the canonical requirements.txt;
-# requirements.lock.txt holds the full transitive lock.
-#
-# Install:  python -m pip install -r requirements.public.txt
+# Install:  python -m pip install -r requirements.txt
 
 # --- Core numerics / data ---
 numpy==2.5.1
 scipy==1.18.0
 pandas==3.0.5
-scikit-learn==1.9.0          # imported as `sklearn` (metrics, IsolationForest, etc.)
+scikit-learn==1.9.0
 
-# --- Plotting (results.py, plot*.py, task4_trend*.py, figure generation) ---
+# --- Plotting ---
 matplotlib==3.11.1
 
-# --- Packet parsing / feature extraction (FeatureExtractor.py, netStat.py, example.py) ---
+# --- Packet parsing / feature extraction ---
 scapy==2.7.0
 
-# --- Utilities used by the runnable pipeline ---
-tqdm==4.70.0                 # progress bars (results.py, loaders)
-psutil==7.2.2                # memory/latency instrumentation (memutil.py, measure_all_latency.py)
-requests==2.34.2             # dataset download helpers
+# --- Pipeline utilities ---
+tqdm==4.70.0
+psutil==7.2.2
+requests==2.34.2
 
-# --- Build toolchain for the optional Cython fast path (fastpath/, setup_cython.py) ---
-# Only needed if you compile the accelerated AfterImage/dA/score kernels.
+# --- Optional Cython fast path (fastpath/, setup_cython.py) ---
 Cython==3.2.9
 
-# =====================================================================
-# OPTIONAL / NOT installed in the reference .venv (guarded imports only).
-# The core Tenko + KitNET pipeline runs WITHOUT these. Install only if you
-# need the specific feature noted.
-#   - dpkt            # faster PCAP parsing in FeatureExtractor.py (falls back to scapy)
-#   - torch           # only if KITNET_USE_TORCH=1 (KitNET/autoencoder.py), or the
-#                     #   mateen_reference / latency-measurement / *_loader scripts
-#   - tensorflow      # only for results/CICIoT2023/baselines/run_vaeesdd_frozen_cic.py
-#   - clingo          # present in the venv but not imported by the core code; only
-#                     #   the ASP/iForest baseline notes reference it
-# =====================================================================
+# Optional (not required for core Tenko + KitNET):
+#   dpkt, torch, tensorflow, clingo

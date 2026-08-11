@@ -200,3 +200,7 @@ results/CICIoT2023/baselines/features/*.npy
 results/CICIoT2023/mixed/rebal/
 # Duplicate VAEESDD score archive (kept: baselines/vaeesdd/vaeesdd_*.npz)
 results/CICIoT2023/baselines/vaeesdd/streaming_baseline/
+
+# workflow.py local layer CSVs (not measured latency)
+_local_dev_layers/
+**/_local_dev_layers/

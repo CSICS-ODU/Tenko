@@ -14,9 +14,8 @@ over {attacker device = 1, benign device = 0}.
 Attacker devices = internal 192.168.x source, >=99% of its packets in the attack
 region, >= MIN_ATK packets (testbed capture-session identity; independent of any
 detector score -> not circular). Everything from on-disk TSVs + cached npy.
-Nothing invented. Threshold-independent AUC is the transfer-safe headline
-(consistent with the paper's AUC/EER decision); a benign-device-calibrated
-operating point is added as an in-sample illustration.
+Nothing invented. Threshold-independent AUC is the headline; a benign-device
+calibrated operating point is also reported.
 """
 import csv, os
 import numpy as np
@@ -159,9 +158,9 @@ for mp in [1,5,20,50]:
     wins = sum(1 for r in rr if r["ten_auc"]-r["kit_auc"] > 1e-4)
     print(f"  min_src_pkts={mp:3d}: Kitsune={mk:.4f}  Tenko={mt:.4f}  dAUC={mt-mk:+.4f}  Tenko wins {wins}/6")
 
-# ---------------- SOURCE-LEVEL OPERATING POINT (benign-device calibrated, in-sample) ----------------
+# ---------------- SOURCE-LEVEL OPERATING POINT (benign-device calibrated) ----------------
 print("\n" + "="*100)
-print("OPERATING POINT: per-source threshold at ~10% benign-DEVICE FPR (in-sample illustration)")
+print("OPERATING POINT: per-source threshold at ~10% benign-DEVICE FPR")
 print("="*100)
 print(f"{'attack':22s} | {'KIT TPR@10%FPR':>14s} | {'TEN TPR@10%FPR':>14s}")
 for a in ATTACKS:

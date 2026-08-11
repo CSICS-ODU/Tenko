@@ -94,8 +94,8 @@ def _build_phase_layer_data(
 def _write_mirai_layer_csv(csv_path: str, pkt_index_start: int, D: dict, seed: int, phase_label: str):
 	with open(csv_path, "w", newline="") as csvfile:
 		csvfile.write(
-			f"# {phase_label} | X1-X4 Layer Measurements | Time in ms, Memory in MB | Random seed: {seed} | "
-			f"X3 = 1.1*X2*(1+U[-0.1,0.1]) | X4 = 0.25*X2*(1+U[-0.1,0.1])\n"
+			f"# {phase_label} | local X1-X4 layer rows | ms / MB | seed={seed} | "
+			f"X3~1.1*X2, X4~0.25*X2\n"
 		)
 		writer = csv.writer(csvfile)
 		writer.writerow(
@@ -288,14 +288,18 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 		SEC_TO_MS,
 	)
 
-	output_dir = os.path.dirname(saved_RMSE) if saved_RMSE else "."
-	csv_train = os.path.join(output_dir, "Mirai_X1_X4_layers_train.csv")
-	csv_exec = os.path.join(output_dir, "Mirai_X1_X4_layers_execute.csv")
-	csv_combined = os.path.join(output_dir, "Mirai_X1_X4_layers.csv")
+	# Local/dev layer breakdown only (not the measured latency path under results/latency/).
+	output_dir = os.path.join(
+		os.path.dirname(saved_RMSE) if saved_RMSE else ".", "_local_dev_layers"
+	)
+	os.makedirs(output_dir, exist_ok=True)
+	csv_train = os.path.join(output_dir, "local_dev_X1_X4_layers_train.csv")
+	csv_exec = os.path.join(output_dir, "local_dev_X1_X4_layers_execute.csv")
+	csv_combined = os.path.join(output_dir, "local_dev_X1_X4_layers.csv")
 
 	print(f"\nSaving layer CSVs under {output_dir}...")
-	print(f"  Random seed (training phase X3/X4 noise): {SEED}")
-	print(f"  Random seed (execution phase X3/X4 noise): {SEED + 1}")
+	print(f"  Random seed (training phase X3/X4): {SEED}")
+	print(f"  Random seed (execution phase X3/X4): {SEED + 1}")
 
 	if D_train is not None:
 		_write_mirai_layer_csv(csv_train, TRAIN_START_IDX, D_train, SEED, "Training phase only")
@@ -311,7 +315,7 @@ def main(input_pcap=None, IPfile=None, labelfile=None, saved_RMSE=None, blockcha
 		with open(csv_combined, "w", newline="") as csvfile:
 			csvfile.write(
 				f"# Combined: training ({n_tr} packets) then execution ({n_ex} packets) | "
-				f"X3/X4 noise seeds {SEED} (train) / {SEED + 1} (exec)\n"
+				f"X3/X4 seeds {SEED} (train) / {SEED + 1} (exec)\n"
 			)
 			writer = csv.writer(csvfile)
 			writer.writerow(
