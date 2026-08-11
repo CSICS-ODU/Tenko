@@ -20,11 +20,7 @@ MIX = os.path.join(HERE, "mixed")
 BASE = os.path.join(HERE, "baselines")
 OUT = os.path.join(BASE, "table_ix_mixed_with_iforest.csv")
 
-# Stream: [0:60000] train (FM 5k + AD 50k + pattern [55001:60000]);
-# test region arrays cover [60000:420000] = 60k eval benign + 300k attack.
-TRAIN_START_IDX = 55001
-BENIGN_LIMIT = 60_000
-N_BEN = 60_000
+N_BEN = 60_000  # eval-region benign leading the test arrays
 
 
 def f1_from_counts(tp, fp, fn):
@@ -49,7 +45,7 @@ def scalar_metrics(y, pred, score):
 
 
 def calibrate_orrule(ndg_ben, nds_ben, target_fpr=0.02, tol=1e-4, iters=60):
-    """Pick shared tail prob p so train-prefix OR-flag rate ~= target_fpr."""
+    """Pick shared tail prob p so benign OR-flag rate ~= target_fpr."""
     lo, hi = 0.0, target_fpr
     best = None
     for _ in range(iters):
@@ -72,35 +68,27 @@ def load():
     ndg = np.load(os.path.join(MIX, "arr_ndg_mixed.npy"))
     nds = np.load(os.path.join(MIX, "arr_nds_mixed.npy"))
     cont = np.load(os.path.join(MIX, "arr_cont_mixed.npy"))
-    ndg_cal = np.load(os.path.join(MIX, "arr_ndg_trainprefix_mixed.npy"))
-    nds_cal = np.load(os.path.join(MIX, "arr_nds_trainprefix_mixed.npy"))
-    rmse_raw = np.load(os.path.join(MIX, "rmse_raw_mixed.npy"))
+    kit = np.load(os.path.join(MIX, "kitsune_testscores_mixed.npy"))
     mateen = np.load(os.path.join(BASE, "mateen", "mateen_mixed.npz"))
     vae = np.load(os.path.join(BASE, "vaeesdd", "vaeesdd_mixed.npz"))
     ifo = np.load(os.path.join(BASE, "iforest", "iforest_mixed.npz"))
-    return y, ndg, nds, cont, ndg_cal, nds_cal, rmse_raw, mateen, vae, ifo
+    return y, ndg, nds, cont, kit, mateen, vae, ifo
 
 
 def build_rows():
-    y, ndg, nds, cont, ndg_cal, nds_cal, rmse_raw, mateen, vae, ifo = load()
+    y, ndg, nds, cont, kit, mateen, vae, ifo = load()
+    ben = slice(0, N_BEN)
 
-    # Calibrate η on train benign prefix [55001:60000]; evaluate on test region.
-    use = (ndg_cal > 0) | (nds_cal > 0)
-    eg, es, _ach, _p = calibrate_orrule(ndg_cal[use], nds_cal[use], 0.02)
+    # η on eval-region benign (paper Table X operating point).
+    eg, es, _ach, _p = calibrate_orrule(ndg[ben], nds[ben], 0.02)
     tenko_pred = ((ndg > eg) | (nds > es)).astype(int)
 
-    # Kitsune: Median+MAD on train-prefix tanh(RMSE); scores on test region.
-    kit_full = np.tanh(rmse_raw)
-    cal = kit_full[TRAIN_START_IDX:BENIGN_LIMIT]
-    med = float(np.median(cal))
-    mad = float(np.median(np.abs(cal - med)))
-    kit_thr = med + 3 * 1.4826 * mad
-    kit = kit_full[BENIGN_LIMIT:]
+    b = kit[ben]
+    kit_thr = float(np.median(b) + 3 * 1.4826 * np.median(np.abs(b - np.median(b))))
     kit_pred = (kit > kit_thr).astype(int)
 
     rows = []
-    rows.append((f"Tenko (orrule@2%: nd_g>{eg:.2f} OR nd_s>{es:.2f})",
-                 scalar_metrics(y, tenko_pred, cont)))
+    rows.append(("Tenko (OR-rule)", scalar_metrics(y, tenko_pred, cont)))
     rows.append(("Kitsune (med+MAD)", scalar_metrics(y, kit_pred, kit)))
     rows.append(("Mateen (native adaptive preds)",
                  scalar_metrics(y, mateen["preds"], mateen["scores"])))

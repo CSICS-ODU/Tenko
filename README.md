@@ -54,7 +54,7 @@ CICIoT2023 driver:
 python run_ciciot2023.py --attacks all
 ```
 
-Figure reproduction scripts live under `reproducibility/plots/` (outputs stay under `results/.../figs/`).
+Figure reproduction scripts live under `reproducibility/plots/` (outputs stay under `results/.../figs/`). See `reproducibility/figure_manifest.csv` for Fig5–Fig7 / Table X paths. Rebuild Table X with `python results/CICIoT2023/build_table_ix_mixed.py --check`.
 
 Regenerate CICIoT2023 RMSE timeline plots from committed CSVs:
 

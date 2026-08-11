@@ -1,0 +1,5 @@
+figure,source_data,script,output
+Fig5,results/main9attack/figs/data/os_scan_adjusted_anomaly_scores.csv,reproducibility/plots/plot_os_scan_adjusted_anomaly.py,results/main9attack/figs/os_scan_adjusted_anomaly_scores.png
+Fig6,results/main9attack/figs/data/rmse_timeline_OS_Scan.csv,reproducibility/plots/plot_rmse_from_csv_kitsune.py,results/main9attack/figs/kitsune_rmse_OS_Scan_from_csv.png
+Fig7,results/CICIoT2023/figs/data/tsne_mixed.csv,reproducibility/plots/plot_tsne.py,results/CICIoT2023/figs/tsne_mixed.png
+TableX,results/CICIoT2023/mixed/,results/CICIoT2023/build_table_ix_mixed.py,results/CICIoT2023/baselines/table_ix_mixed_with_iforest.csv
