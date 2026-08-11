@@ -1,3 +1,13 @@
+<div align="center">
+
+<img src="https://gray-wdbj-prod.gtv-cdn.com/resizer/v2/2DFZHRYB3NMI7CGVOMXCPEVJII.jpg?auth=56763f06dc70d391d7bfba0b33a72480b3fa8dce8372a725d52b426441e3245d&width=800&height=450&smart=true" alt="Virginia Tech" width="320" />
+
+# ⚠️ PATENT APPLIED FOR ⚠️
+
+### Virginia Tech has applied for a patent covering the invention(s) described in this repository.
+
+</div>
+
 # Tenko
 
 Tenko is a streaming network intrusion detection system built on the Kitsune / KitNET per-packet autoencoder backbone. It adds per-source node scoring, a benign-calibrated tolerance layer, and weighted decision fusion so anomaly decisions are device-aware and trainable without attack labels.
