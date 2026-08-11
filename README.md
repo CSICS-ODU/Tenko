@@ -8,29 +8,39 @@
 
 </div>
 
-# Tenko
+# Overview
 
 Tenko is a streaming network intrusion detection system built on the Kitsune / KitNET per-packet autoencoder backbone. It adds per-source node scoring, a benign-calibrated tolerance layer, and weighted decision fusion.
 
-## Setup
+The codebase consists of two primary scripts:
+
+1. `example.py`: Runs KitNET on a PCAP/TSV and writes intermediate RMSE scores (`RMSEs.pkl`).
+2. `results.py`: Consumes those scores (with TSV/labels) to build pattern models, fuse decisions, and report metrics / plots.
+
+For further details, please refer to the main paper.
+
+# Pre-requisites and requirements
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-python results/CICIoT2023/build_table_ix_mixed.py --check
 ```
 
-Tested with Python 3.14 and the pins in `requirements.txt`. Optional Cython fast path: `setup_cython.py` / `fastpath/`. Measured latency lives under `results/latency/` (`measure_all_latency.py`).
+Tested with Python 3.14 and the pins in `requirements.txt`. Optional Cython fast path: `setup_cython.py` / `fastpath/`.
 
-## How to run
+# How to Use
+
+## Running Tenko
 
 ```bash
-python example.py      # KitNET on a PCAP/TSV → RMSEs.pkl
-python results.py      # pattern models + weighted fusion → metrics / plots
+python example.py
+python results.py
 ```
 
-Optional wrapper:
+Edit input paths inside the scripts for your PCAP, TSV, and label files.
+
+Optional parameterized wrapper:
 
 ```bash
 python workflow.py -i <input_pcap> -ip <tsv_file> -l <label_file> -o
@@ -38,33 +48,20 @@ python workflow.py -i <input_pcap> -ip <tsv_file> -l <label_file> -o
 python workflow.py -r <saved_RMSE> -ip <tsv_file> -l <label_file> -b
 ```
 
-CICIoT2023 drivers (`CIC_DATA_ROOT` / `CIC_RESULTS_ROOT`):
+CICIoT2023 driver:
 
 ```bash
 python run_ciciot2023.py --attacks all
-python run_ciciot2023.py --tanh single --use-cached-rmse
 ```
 
-## Datasets
+# Datasets
 
-| Dataset | Link |
-|---|---|
-| Kitsune | [UCI id=516](https://archive.ics.uci.edu/dataset/516/kitsune+network+attack+dataset) |
-| N-BaIoT | [UCI id=442](https://archive.ics.uci.edu/dataset/442/detection_of_iot_botnet_attacks_n_baiot) |
-| CICIoT2023 | [UNB CIC](https://www.unb.ca/cic/datasets/iotdataset-2023.html) |
+Organize downloaded data under this repository, then point the scripts at your local paths.
 
-## Configuration
+- **Kitsune** (and mixed Kitsune-style streams): [UCI ML Repository id=516](https://archive.ics.uci.edu/dataset/516/kitsune+network+attack+dataset). Dataset / evaluation-setup reference for Kitsune and mixed Kitsune streams follows [Mateen’s README](https://github.com/ICL-ml4csec/Mateen/blob/main/README.md).
+- **N-BaIoT**: [UCI ML Repository id=442](https://archive.ics.uci.edu/dataset/442/detection_of_iot_botnet_attacks_n_baiot)
+- **CICIoT2023**: [Canadian Institute for Cybersecurity](https://www.unb.ca/cic/datasets/iotdataset-2023.html)
 
-| Knob | Default | Where |
-|---|---|---|
-| FM / AD grace | 5000 / 50000 | `example.py`, `run_ciciot2023.py` |
-| `benignLimit` | 100000 (CIC mixed: 60000) | `results.py` / drivers |
-| η_global / η_node | 50 / 20 | `run_ciciot2023.py` |
-| Table X OR-rule | train-prefix ~2% FPR | `results/CICIoT2023/build_table_ix_mixed.py` |
-| tanh | `single` (`--tanh double` available) | `run_ciciot2023.py`; mixed path is single |
-| Pattern window / segments | 100 / 10 | drivers |
-| `memorySize` | 60 (fixed before evaluation) | drivers |
-
-## License / citation
+# Citation
 
 Cite the Tenko paper and upstream Kitsune / KitNET as appropriate. Follow each dataset provider’s terms of use.

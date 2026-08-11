@@ -1,15 +1,10 @@
 # Tenko — public runtime requirements (curated top-level dependencies)
 # ---------------------------------------------------------------------
 # Python: 3.14.5   (tested in the repo `.venv`)
-# Versions below are pinned to the versions actually present in that venv
-# (see requirements.lock.txt for the full, transitive-inclusive lock).
+# Versions match requirements.txt; requirements.lock.txt is the full freeze.
 #
-# NOTE: The committed requirements.txt is STALE (it pins numpy 1.26.4 for
-# Python 3.9-era). This file reflects the real, working environment
-# (numpy 2.x on Python 3.14). This file is now the canonical requirements.txt;
-# requirements.lock.txt holds the full transitive lock.
-#
-# Install:  python -m pip install -r requirements.public.txt
+# Install:  python -m pip install -r requirements.txt
+#   (or this file — same pins)
 
 # --- Core numerics / data ---
 numpy==2.5.1
