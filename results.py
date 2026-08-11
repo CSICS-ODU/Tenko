@@ -778,19 +778,15 @@ def get_adversarial_IPs_weighted_pattern(
 	# --- Weighted Ensemble Params ---
 	weight_global: float = 0.5,       # Weight for the global pooled model's prediction
 	weight_single: float = 0.5,       # Weight for the single aggregate model's prediction
-	ensemble_threshold: float = 0.5   # Threshold for the final weighted prediction
-) -> tuple[
-	list[int],
-	list[int],
-	list[float],
-	list[int],
-	list[int],
-	list[float],
-	list[int],
-	list[int],
-]:
+	ensemble_threshold: float = 0.5,  # Threshold for the final weighted prediction
+	# --- Additive, non-breaking extensions (defaults preserve original behavior) ---
+	benignLimit: Optional[int] = None,   # train/test split index; None => original hardcoded 100000
+	return_scores: bool = False,         # if True, append pred_scores (continuous) as a 9th return element
+):
 
-	benignLimit = 100000
+	# benignLimit=None reproduces the original hardcoded split (100000). A caller
+	# (e.g. run_ciciot2023.py) may override it to match a different benign lead-in.
+	benignLimit = 100000 if benignLimit is None else int(benignLimit)
 	FMgrace, ADgrace = 5000, 50000
 
 	# --- Input Validation ---
@@ -883,12 +879,23 @@ def get_adversarial_IPs_weighted_pattern(
 	pred_unknown_global = []
 	pred_unknown_single = []
 	pred_weighted = [] # Store results of weighted ensemble
-	pred_scores = []    # Store the raw combined_score for ROC
+	pred_scores = []    # Store the raw combined_score for ROC (discrete {0, w_s, w_g, 1})
+	# Threshold-independent continuous score: pattern distance normalized by the
+	# benign spread (max intra-cluster training distance = tol / tol_factor). This
+	# removes the η (tol_factor) operating point; the binary rule flags when the
+	# normalized distance exceeds η. AUC/EER on this score measures the raw
+	# discriminative power of the node-aggregated pattern signal (Tenko's X2-X4).
+	pred_cont_scores = []
+	node_scores_test = []  # per-test-packet X2 node anomaly score (continuous)
+	nd_g_list = []  # per-test-packet global normalized pattern distance (distance / benign spread)
+	nd_s_list = []  # per-test-packet single-aggregate normalized pattern distance
+	global_base = (global_tol / global_pool_tol_factor) if (global_tol not in (None, 0)) else None
+	single_base = (single_aggregate_recognizer.tol / single_agg_tol_factor) if (single_aggregate_recognizer.tol not in (None, 0)) else None
 
 
 	if len(RMSEs_norm) <= benignLimit:
 		print("[ERROR] No data points for testing.")
-		return (
+		_early = (
 			gold,
 			[],
 			x2_times_train,
@@ -899,6 +906,7 @@ def get_adversarial_IPs_weighted_pattern(
 			[],
 			[],
 		)
+		return _early + ((pred_scores, pred_cont_scores, node_scores_test, nd_g_list, nd_s_list) if return_scores else ())
 
 	for i in tqdm(range(benignLimit, len(RMSEs_norm)), desc="Testing Weighted Patterns"):
 		ip, rmse_norm = IPs[i], RMSEs_norm[i]
@@ -933,6 +941,22 @@ def get_adversarial_IPs_weighted_pattern(
 		pred_scores.append(combined_score)
 		weighted_pred = 1 if combined_score >= ensemble_threshold else 0
 		pred_weighted.append(weighted_pred)
+
+		# --- Threshold-independent continuous score (η-normalized pattern distance) ---
+		nd_g = 0.0
+		if global_centroid is not None and global_base:
+			vg = per_ip_recognizers[ip]._current_vector() if ip in per_ip_recognizers else None
+			if vg is not None and vg.shape == global_centroid.shape:
+				nd_g = float(np.linalg.norm(vg - global_centroid)) / global_base
+		nd_s = 0.0
+		if single_aggregate_recognizer.centroid is not None and single_base:
+			vs = single_aggregate_recognizer._current_vector()
+			if vs is not None and vs.shape == single_aggregate_recognizer.centroid.shape:
+				nd_s = float(np.linalg.norm(vs - single_aggregate_recognizer.centroid)) / single_base
+		pred_cont_scores.append(weight_global * nd_g + weight_single * nd_s)
+		node_scores_test.append(float(score))
+		nd_g_list.append(nd_g)
+		nd_s_list.append(nd_s)
 
 		_t1 = time.perf_counter()
 		x2_times_exec.append(_t1 - _t0)
@@ -1017,7 +1041,7 @@ def get_adversarial_IPs_weighted_pattern(
 	print(
 		f"X2 layer data collected: training={len(x2_times_train)}, execution={len(x2_times_exec)} measurements"
 	)
-	return (
+	_ret = (
 		gold,
 		final_pred_to_return,
 		x2_times_train,
@@ -1027,6 +1051,15 @@ def get_adversarial_IPs_weighted_pattern(
 		x2_memory_exec,
 		x2_memory_rss_exec,
 	)
+	# Additive: when requested, expose the continuous ensemble scores for ROC/AUC
+	# without changing the tuple length seen by existing callers (default off).
+	# Extra elements (only when return_scores=True):
+	#   [8] pred_scores       discrete weighted-flag score
+	#   [9] pred_cont_scores  η-normalized fused pattern distance (threshold-independent)
+	#   [10] node_scores_test per-test-packet X2 node anomaly score
+	#   [11] nd_g_list        per-test-packet global normalized pattern distance
+	#   [12] nd_s_list        per-test-packet single-aggregate normalized pattern distance
+	return _ret + ((pred_scores, pred_cont_scores, node_scores_test, nd_g_list, nd_s_list) if return_scores else ())
 
 ######################################################
 # Driver (Updated Example for Weighted Patterns)     #

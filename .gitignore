@@ -158,3 +158,32 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# ---------------------------------------------------------------------------
+# Public release (public-release branch): exclude large / raw / regenerable
+# artifacts. See REPRODUCIBILITY.md for how to obtain or regenerate these.
+# ---------------------------------------------------------------------------
+# Extra virtualenvs (only .venv is covered above)
+.venv314/
+.venv_mateen/
+.venv_vae/
+# macOS / office cruft
+.DS_Store
+**/.DS_Store
+~$*.docx
+*.pptx
+# Vendored upstream baseline source (Kitsune/Mateen/VAEESDD/etc.).
+# Attribution + upstream URLs are documented in REPRODUCIBILITY.md.
+external/
+# Raw packet captures and their TSV conversions (derived from CICIoT2023,
+# which requires registration to download). Multi-GB; regenerable from PCAP.
+*.pcap
+*.pcapng
+*.pcap.tsv
+results/CICIoT2023/**/*.tsv
+# Large per-packet feature matrices (regenerable from TSV via extract_features.py)
+results/CICIoT2023/baselines/features/*.npy
+# Re-balance side-experiment (not used by any headline table; bulk streams)
+results/CICIoT2023/mixed/rebal/
+# Duplicate VAEESDD score archive (kept: baselines/vaeesdd/vaeesdd_*.npz)
+results/CICIoT2023/baselines/vaeesdd/streaming_baseline/
