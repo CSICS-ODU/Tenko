@@ -1,0 +1,3 @@
+# Large raw Kitsune (NDSS'18) captures / feature CSVs — do NOT commit.
+# Only the metrics CSVs, verification CSV, memo, and driver are public.
+data/
