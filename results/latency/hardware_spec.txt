@@ -1,0 +1,20 @@
+=== Tenko latency experiment - machine hardware spec ===
+Captured: 2026-08-10 20:53:35 EDT
+Hostname: KKP9M29D7D-D
+
+CPU brand:            Apple M4 Pro
+Physical cores:       14
+Logical cores:        14
+ncpu (hw.ncpu):       14
+RAM (hw.memsize):     51539607552 bytes (48.00 GiB)
+
+=== macOS version (sw_vers) ===
+ProductName:		macOS
+ProductVersion:		26.5.2
+BuildVersion:		25F84
+
+=== uname -a ===
+Darwin KKP9M29D7D-D 25.5.0 Darwin Kernel Version 25.5.0: Tue Jun  9 22:28:34 PDT 2026; root:xnu-12377.121.10~1/RELEASE_ARM64_T6041 arm64
+
+=== Python ===
+Python 3.14.5

@@ -1,0 +1,64 @@
+attack,threshold_method,tpr,fpr,fnr,precision,source
+Mirai,Highest (max+std),0.881,0.0,0.119,1.0,Daksh-Mateen:resultsNew.py
+Fuzzing,Highest (max+std),1.0,0.749,0.0,0.248,Daksh-Mateen:resultsNew.py
+SSDP Flood,Highest (max+std),0.0,0.0,1.0,0.219,Daksh-Mateen:resultsNew.py
+Wiretap,Highest (max+std),1.0,0.813,0.0,0.466,Daksh-Mateen:resultsNew.py
+SSL Reneg.,Highest (max+std),0.848,0.019,0.152,0.668,Daksh-Mateen:resultsNew.py
+Video Injection,Highest (max+std),0.0,0.0,1.0,0.0,Daksh-Mateen:resultsNew.py
+ARP MITM,Highest (max+std),1.0,0.851,0.0,0.508,Daksh-Mateen:resultsNew.py
+OS Scan,Highest (max+std),1.0,0.218,0.0,0.161,Daksh-Mateen:resultsNew.py
+Syn DOS,Highest (max+std),0.001,0.0,0.999,0.013,Daksh-Mateen:resultsNew.py
+Mirai,Medium (mean),0.91,0.251,0.09,0.972,Daksh-Mateen:resultsNew.py
+Fuzzing,Medium (mean),1.0,0.985,0.0,0.2,Daksh-Mateen:resultsNew.py
+SSDP Flood,Medium (mean),1.0,0.773,0.0,0.419,Daksh-Mateen:resultsNew.py
+Wiretap,Medium (mean),1.0,0.973,0.0,0.422,Daksh-Mateen:resultsNew.py
+SSL Reneg.,Medium (mean),0.996,0.983,0.004,0.044,Daksh-Mateen:resultsNew.py
+Video Injection,Medium (mean),0.0,0.0,1.0,0.008,Daksh-Mateen:resultsNew.py
+ARP MITM,Medium (mean),1.0,0.981,0.0,0.472,Daksh-Mateen:resultsNew.py
+OS Scan,Medium (mean),1.0,0.983,0.0,0.041,Daksh-Mateen:resultsNew.py
+Syn DOS,Medium (mean),1.0,0.974,0.0,0.003,Daksh-Mateen:resultsNew.py
+Mirai,Lowest (min),1.0,1.0,0.0,0.906,Daksh-Mateen:resultsNew.py
+Fuzzing,Lowest (min),1.0,1.0,0.0,0.198,Daksh-Mateen:resultsNew.py
+SSDP Flood,Lowest (min),1.0,1.0,0.0,0.358,Daksh-Mateen:resultsNew.py
+Wiretap,Lowest (min),1.0,1.0,0.0,0.415,Daksh-Mateen:resultsNew.py
+SSL Reneg.,Lowest (min),1.0,1.0,0.0,0.043,Daksh-Mateen:resultsNew.py
+Video Injection,Lowest (min),1.0,1.0,0.0,0.042,Daksh-Mateen:resultsNew.py
+ARP MITM,Lowest (min),1.0,1.0,0.0,0.468,Daksh-Mateen:resultsNew.py
+OS Scan,Lowest (min),1.0,1.0,0.0,0.04,Daksh-Mateen:resultsNew.py
+Syn DOS,Lowest (min),1.0,1.0,0.0,0.003,Daksh-Mateen:resultsNew.py
+Mirai,Max,0.881,0.0,0.119,1.0,Daksh-Mateen:resultsNew.py
+Fuzzing,Max,1.0,0.775,0.0,0.241,Daksh-Mateen:resultsNew.py
+SSDP Flood,Max,0.0,0.0,1.0,0.217,Daksh-Mateen:resultsNew.py
+Wiretap,Max,1.0,0.829,0.0,0.461,Daksh-Mateen:resultsNew.py
+SSL Reneg.,Max,0.848,0.019,0.152,0.667,Daksh-Mateen:resultsNew.py
+Video Injection,Max,0.0,0.0,1.0,0.0,Daksh-Mateen:resultsNew.py
+ARP MITM,Max,1.0,0.922,0.0,0.488,Daksh-Mateen:resultsNew.py
+OS Scan,Max,1.0,0.272,0.0,0.133,Daksh-Mateen:resultsNew.py
+Syn DOS,Max,0.001,0.0,0.999,0.012,Daksh-Mateen:resultsNew.py
+Mirai,3-sigma,0.883,0.006,0.117,0.999,Daksh-Mateen:resultsNew.py
+Fuzzing,3-sigma,1.0,0.944,0.0,0.207,Daksh-Mateen:resultsNew.py
+SSDP Flood,3-sigma,0.0,0.001,1.0,0.053,Daksh-Mateen:resultsNew.py
+Wiretap,3-sigma,1.0,0.891,0.0,0.444,Daksh-Mateen:resultsNew.py
+SSL Reneg.,3-sigma,0.849,0.02,0.151,0.658,Daksh-Mateen:resultsNew.py
+Video Injection,3-sigma,0.0,0.0,1.0,0.004,Daksh-Mateen:resultsNew.py
+ARP MITM,3-sigma,1.0,0.942,0.0,0.482,Daksh-Mateen:resultsNew.py
+OS Scan,3-sigma,1.0,0.862,0.0,0.046,Daksh-Mateen:resultsNew.py
+Syn DOS,3-sigma,0.001,0.001,0.999,0.002,Daksh-Mateen:resultsNew.py
+Mirai,Med+1.5xMAD,0.91,0.246,0.09,0.973,Daksh-Mateen:resultsNew.py
+Fuzzing,Med+1.5xMAD,1.0,0.976,0.0,0.202,Daksh-Mateen:resultsNew.py
+SSDP Flood,Med+1.5xMAD,1.0,0.983,0.0,0.362,Daksh-Mateen:resultsNew.py
+Wiretap,Med+1.5xMAD,1.0,0.942,0.0,0.43,Daksh-Mateen:resultsNew.py
+SSL Reneg.,Med+1.5xMAD,0.994,0.977,0.006,0.044,Daksh-Mateen:resultsNew.py
+Video Injection,Med+1.5xMAD,1.0,0.981,0.0,0.043,Daksh-Mateen:resultsNew.py
+ARP MITM,Med+1.5xMAD,1.0,0.969,0.0,0.475,Daksh-Mateen:resultsNew.py
+OS Scan,Med+1.5xMAD,1.0,0.957,0.0,0.042,Daksh-Mateen:resultsNew.py
+Syn DOS,Med+1.5xMAD,1.0,0.978,0.0,0.003,Daksh-Mateen:resultsNew.py
+Mirai,Logarithmic,0.883,0.01,0.117,0.999,Daksh-Mateen:resultsNew.py
+Fuzzing,Logarithmic,1.0,0.817,0.0,0.232,Daksh-Mateen:resultsNew.py
+SSDP Flood,Logarithmic,1.0,0.307,0.0,0.645,Daksh-Mateen:resultsNew.py
+Wiretap,Logarithmic,0.815,0.616,0.185,0.484,Daksh-Mateen:resultsNew.py
+SSL Reneg.,Logarithmic,0.849,0.02,0.151,0.657,Daksh-Mateen:resultsNew.py
+Video Injection,Logarithmic,0.095,0.395,0.905,0.011,Daksh-Mateen:resultsNew.py
+ARP MITM,Logarithmic,0.734,0.435,0.266,0.597,Daksh-Mateen:resultsNew.py
+OS Scan,Logarithmic,1.0,0.488,0.0,0.079,Daksh-Mateen:resultsNew.py
+Syn DOS,Logarithmic,0.001,0.012,0.999,0.0,Daksh-Mateen:resultsNew.py

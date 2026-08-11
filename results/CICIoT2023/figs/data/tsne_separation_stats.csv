@@ -1,0 +1,8 @@
+family,category,n,silhouette_2d,silhouette_hi,centroid_dist_norm,benign_knn_overlap
+ALL_ATTACK,(benign vs any attack),15000,0.1167,0.0361,nan,nan
+DDoS-UDP_Flood,volumetric flood,2500,0.3692,0.2393,1.803,0.029
+DoS-SYN_Flood,volumetric flood,2500,0.4728,0.5437,2.34,0.006
+Mirai-greeth_flood,volumetric flood (botnet),2500,0.3046,0.4442,1.642,0.029
+MITM-ArpSpoofing,spoofing / MITM,2500,0.3711,0.5115,1.902,0.055
+Recon-OSScan,reconnaissance,2500,0.1091,0.143,0.476,0.184
+DictionaryBruteForce,brute force,2500,-0.0273,0.0773,0.189,0.37

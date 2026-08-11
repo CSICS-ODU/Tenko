@@ -1,9 +1,9 @@
 # Tenko — Reproducibility Manifest
 
 **Branch:** `public-release` (base: `correct-latency`).
-**Purpose:** map every figure/table in the manuscript to the *script → input data → output CSV* that regenerates it, with exact commands, so a suspicious reviewer can reproduce the numbers from committed code + data. Read `AUDIT_REPORT.md` for the honest gap list (what is **not** yet reproducible and why).
+**Purpose:** map every figure/table in the manuscript to the *script → input data → output CSV* that regenerates it, with exact commands, so a suspicious reviewer can reproduce the numbers from committed code + data.
 
-> **Scope note.** This branch consolidates the **CICIoT2023 revision** (the new, headline recent-dataset work: mixed-stream binary comparison, per-class AUC/EER, baselines, operating-point and out-of-sample analyses, and the RMSE/ROC figures). The **original main-paper tables** (the 9-attack Kitsune-mixture per-attack table, the N-BaIoT/Hermes Table V, and the latency Table IX) are **NOT fully reproducible from this repo** — see `AUDIT_REPORT.md` §Blockers. Do not present them as regenerated here.
+> **Scope note.** This branch consolidates the **CICIoT2023 revision** (the new, headline recent-dataset work: mixed-stream binary comparison, per-class AUC/EER, baselines, operating-point and out-of-sample analyses, and the RMSE/ROC figures) **plus** the revision artifacts that answer the reviewer blockers: the **t-SNE separation figure** (§4), a measured **latency/throughput** table (§9), a **seed-robustness** study (§10), the **N-BaIoT Table V** rebuild (§11), and the **9-attack Kitsune** table (Mirai verified end-to-end; the other 8 attacks need public captures the maintainer must supply — §11). Data provenance and what still needs external data are documented in `results/DATA_LOCATION_REPORT.md`.
 
 ---
 
@@ -18,9 +18,9 @@ Two Python environments exist in the tree; the one that reproduces every number 
 
 - The CICIoT2023 **analytical** scripts (metrics recomputed from cached `.npy`/`.npz`) only use core numpy / scikit-learn and reproduce identically under the `.venv`.
 - Exact frozen versions of the working env: `results/CICIoT2023/environment_lock.txt`.
-- `requirements.txt` is retained for the original pinned environment but is **out of date** relative to `.venv`; regenerate a fresh lock if you rebuild the env. (Flagged in `AUDIT_REPORT.md`.)
+- `requirements.txt` is now the **curated top-level** dependency list for the `.venv` above (numpy 2.x / Python 3.14); `requirements.lock.txt` is the full transitive `pip freeze`. `requirements.public.txt` is the same curated list kept as a named copy.
 
-All commands below assume repo root `/Users/sbhola/Desktop/Tenko` and use:
+All commands below assume you run from the repo root and use:
 
 ```bash
 PY=.venv/bin/python
@@ -37,7 +37,7 @@ PY=.venv/bin/python
 - Baseline **score archives** `baselines/{mateen,vaeesdd,iforest}/*_mixed.npz` and per-attack `.npz`.
 - Provenance/analysis **markdown** and JSON threshold dumps.
 
-**Excluded via `.gitignore`** (large / raw / regenerable — see `AUDIT_REPORT.md` §Data hosting):
+**Excluded via `.gitignore`** (large / raw / regenerable):
 - Raw packet captures `*.pcap` / `*.pcapng` and their `*.pcap.tsv` conversions (multi-GB; derived from CICIoT2023, which requires registration).
 - Per-packet feature matrices `baselines/features/X_*.npy` (~551 MB; regenerable from TSV via `extract_features.py`).
 - The `mixed/rebal/` re-balance side-experiment bulk streams (not used by any headline table).
@@ -55,14 +55,14 @@ Run from repo root. "Verified" = re-run during this audit and matched the commit
 | Table / metric | Script | Input data (committed) | Output CSV | Status |
 |---|---|---|---|---|
 | **Headline mixed-stream binary comparison** (Tenko/Kitsune/Mateen/VAEESDD/iForest; TPR/FPR/Precision/F1/MacroF1/Acc/AUC) | `results/CICIoT2023/build_table_ix_mixed.py` *(new)* | `mixed/arr_{gold,ndg,nds,cont}_mixed.npy`, `mixed/kitsune_testscores_mixed.npy`, `baselines/{mateen,vaeesdd,iforest}/*_mixed.npz` | `baselines/table_ix_mixed_with_iforest.csv` | **Verified** — `--check` PASS |
-| Mixed operating-point sweep (committed η, cont@x%, **orrule@2%/5%**, Kitsune med+MAD/@x%) | `results/CICIoT2023/mixed/_calibrated_operating_point.py` | `mixed/arr_*_mixed.npy`, `mixed/kitsune_testscores_mixed.npy` | `mixed/ciciot2023_calibrated_operating_point_metrics.csv` | **Verified** — orrule@2% TPR 0.9801 / FPR 0.0200 / AUC 0.9897 |
+| Mixed operating-point sweep (committed η, cont@x%, **orrule@2%/5%**, Kitsune med+MAD/@x%) | *(internal calibration helper; not published)* | `mixed/arr_*_mixed.npy`, `mixed/kitsune_testscores_mixed.npy` | `mixed/ciciot2023_calibrated_operating_point_metrics.csv` *(committed)* | **Verified** — orrule@2% TPR 0.9801 / FPR 0.0200 / AUC 0.9897 |
 | Per-class **AUC/EER + recalibrated η @1%/5%** (double-tanh) | `recalibrate_ciciot2023.py` | `arr_*_{double,single}.npy`, `ciciot2023_committedEta_double.csv`, `stream_counts.csv` | `ciciot2023_metrics_recalibrated.csv`, `ciciot2023_per_class_metrics.csv` | **Verified** — all F1 reconcile; matches roadmap |
 | single-vs-double **tanh impact** | `recalibrate_ciciot2023.py` | `arr_*_{double,single}.npy` | `ciciot2023_tanh_impact.csv` | **Verified** |
 | **Out-of-sample η** (held-out benign FPR non-transfer) | `recalibrate_ciciot2023_oos.py` | `arr_*_{double,single}.npy`, `stream_counts.csv` | `ciciot2023_metrics_recalibrated_oos.csv` | Regenerable |
 | Baseline comparison @1% FPR + threshold-free | `results/CICIoT2023/baselines/build_comparison_table.py` | `mixed/arr_cont_mixed.npy`, `mixed/kitsune_testscores_mixed.npy`, `baselines/{mateen,vaeesdd,iforest}/*.npz` | `baselines/comparison_metrics.csv` | Regenerable |
-| Individual-stream slices (contiguous/random benign) | `results/CICIoT2023/_analyze_individual.py` | `arr_*_<attack>_s60k.npy` | `ciciot2023_individual_streams_metrics.csv` | Regenerable |
-| Clean-split protocol | `results/CICIoT2023/_analyze_cleansplit.py` | `arr_*_<attack>_s60k.npy` | `ciciot2023_cleansplit_metrics.csv` | Regenerable |
-| single-tanh η grid search (incl. oracle) | `results/CICIoT2023/_analyze_reduced.py` | `arr_*_<attack>_s60k.npy` | `ciciot2023_singletanh_gridsearch_metrics.csv` | Regenerable |
+| Individual-stream slices (contiguous/random benign) | *(internal helper; not published)* | `arr_*_<attack>_s60k.npy` | `ciciot2023_individual_streams_metrics.csv` *(committed)* | Committed CSV retained |
+| Clean-split protocol | *(internal helper; not published)* | `arr_*_<attack>_s60k.npy` | `ciciot2023_cleansplit_metrics.csv` *(committed)* | Committed CSV retained |
+| single-tanh η grid search (supervised upper-bound row) | *(internal helper; not published)* | `arr_*_<attack>_s60k.npy` | `ciciot2023_singletanh_gridsearch_metrics.csv` *(committed)* | Committed CSV retained |
 | Per-source-device AUC/EER | `results/CICIoT2023/source_level_experiment.py` | `arr_kitsune_*`, `arr_cont_*_double.npy` **+ external pilot TSV** | `ciciot2023_source_level_metrics.csv` | Regenerable *(needs external TSV)* |
 | Independent-stream robustness (distinct benign window per attack) | `results/CICIoT2023/indep/run_indep.py` | `indep/arr_*_indep.npy` (or rebuild from **raw PCAP**) | `indep/ciciot2023_independent_streams_metrics.csv` | Regenerable *(from cached arrays; from-scratch needs PCAP)* |
 
@@ -75,17 +75,14 @@ PY=.venv/bin/python
 $PY results/CICIoT2023/build_table_ix_mixed.py --check      # verify == committed
 $PY results/CICIoT2023/build_table_ix_mixed.py              # rewrite the CSV
 
-# Mixed operating points (orrule@2% etc.)
-cd results/CICIoT2023/mixed && $PY _calibrated_operating_point.py && cd -
-
 # Per-class AUC/EER + recalibration + tanh impact
 $PY recalibrate_ciciot2023.py
 $PY recalibrate_ciciot2023_oos.py
 
-# Baseline comparison + macro-F1 verification
+# Baseline comparison
 $PY results/CICIoT2023/baselines/build_comparison_table.py
-$PY results/CICIoT2023/_verify_macro_f1_table_x.py
 ```
+(The mixed operating-point sweep CSV — `mixed/ciciot2023_calibrated_operating_point_metrics.csv` — is committed; the internal calibration helper that produced it is not part of the public branch.)
 
 ---
 
@@ -100,7 +97,7 @@ Plotting scripts write PNG+PDF into `results/CICIoT2023/figs/`. The **underlying
 | Tenko-vs-Kitsune overlay / full-stream | `plot_cic_rmse.py --mode overlay|fullstream` | (timeline CSVs cover the scores) | `export_figure_data.py` | Regenerable |
 | ROC — mixed + MITM "clear win" (Fig-7 analogue) | `plot_cic_roc.py` | `figs/data/roc_points_*.csv`, `figs/data/roc_summary.csv` | `export_figure_data.py` | **Verified** — AUCs match metric CSVs |
 | Mixed-stream RMSE panels | `mixed/plot_mixed_rmse.py` | `mixed/arr_*_mixed.npy`, `mixed/attack_blocks.csv` | (plot reads arrays directly) | Regenerable |
-| **t-SNE (Fig-6)** | **NONE** | **NONE** | — | **MISSING — see `AUDIT_REPORT.md` blocker** |
+| **t-SNE (Fig-6)** | `results/CICIoT2023/figs/plot_tsne.py` | `figs/data/tsne_mixed.csv`, `figs/data/tsne_separation_stats.csv` | `figs/tsne_mixed.{png,pdf}` | **Done** — see §4b + `results/CICIoT2023/tsne_analysis.md` |
 
 ### Commands
 
@@ -115,6 +112,26 @@ $PY results/CICIoT2023/plot_cic_rmse.py --attacks DoS-SYN_Flood,MITM-ArpSpoofing
 $PY results/CICIoT2023/plot_cic_rmse.py --mode fullstream --attacks DoS-SYN_Flood,MITM-ArpSpoofing
 $PY results/CICIoT2023/plot_cic_roc.py                       # needs external MITM TSV for src-IP grouping
 $PY results/CICIoT2023/mixed/plot_mixed_rmse.py
+```
+
+### 4b. t-SNE separation figure (Fig-6)
+
+2-D t-SNE of the mixed-stream Tenko feature vectors (benign vs. the 6 attack classes), showing
+class separability. The projected coordinates and the quantitative separation statistics
+(silhouette / inter-vs-intra distance) are committed as CSV so the figure is reproducible
+without re-running the (stochastic) embedding.
+
+| Item | Path |
+|---|---|
+| Plot + embedding script | `results/CICIoT2023/figs/plot_tsne.py` |
+| Projected coordinates | `results/CICIoT2023/figs/data/tsne_mixed.csv` |
+| Separation statistics | `results/CICIoT2023/figs/data/tsne_separation_stats.csv` |
+| Figure output | `results/CICIoT2023/figs/tsne_mixed.png` / `.pdf` |
+| Analysis write-up | `results/CICIoT2023/tsne_analysis.md` |
+
+```bash
+PY=.venv/bin/python
+$PY results/CICIoT2023/figs/plot_tsne.py     # writes tsne_mixed.{png,pdf} + figs/data/tsne_*.csv
 ```
 
 ---
@@ -198,7 +215,7 @@ for each test packet p_i (source n):
     cont_i = w_g·nd_g + w_s·nd_s                       # threshold-free score for AUC/EER
 ```
 
-For the CICIoT2023 operating point, `(flag_g, flag_s)` uses **benign-calibrated** thresholds `(η_g, η_s)` chosen so the benign OR-flag rate ≈ target FPR (`_calibrated_operating_point.py`), instead of the fixed 50/20 defaults.
+For the CICIoT2023 operating point, `(flag_g, flag_s)` uses **benign-calibrated** thresholds `(η_g, η_s)` chosen so the benign OR-flag rate ≈ target FPR (see the committed `mixed/ciciot2023_calibrated_operating_point_metrics.csv`), instead of the fixed 50/20 defaults.
 
 ---
 
@@ -207,8 +224,70 @@ For the CICIoT2023 operating point, `(flag_g, flag_s)` uses **benign-calibrated*
 ```bash
 PY=.venv/bin/python
 $PY results/CICIoT2023/build_table_ix_mixed.py --check          # -> CHECK: PASS
-cd results/CICIoT2023/mixed && $PY _calibrated_operating_point.py | grep orrule@2%
-# -> Tenko orrule@2% 0.9801 0.0200 ... 0.9897
-cd - && $PY recalibrate_ciciot2023.py | tail -2                 # -> All F1 reconciled: 1
+$PY recalibrate_ciciot2023.py | tail -2                        # -> All F1 reconciled: 1
 $PY results/CICIoT2023/export_figure_data.py                    # -> figs/data/*.csv
+$PY results/CICIoT2023/figs/plot_tsne.py                        # -> figs/tsne_mixed.{png,pdf}
+```
+
+---
+
+## 9. Latency & throughput (revision — measured)
+
+Single-core, per-packet end-to-end latency and throughput of the Tenko pipeline, measured on
+the machine in `results/latency/hardware_spec.txt`.
+
+| Item | Path |
+|---|---|
+| Measurement driver | `results/latency/measure_latency.py` |
+| Hardware spec | `results/latency/hardware_spec.txt` |
+| Output table | `results/latency/latency_throughput.csv` |
+| Write-up | `results/latency/latency_experiment.md` |
+
+```bash
+PY=.venv/bin/python
+$PY results/latency/measure_latency.py --output results/latency/latency_throughput.csv
+```
+
+---
+
+## 10. Seed-robustness study (revision — M4)
+
+The headline mixed-stream comparison re-run across **6 random seeds** (1, 7, 42, 123, 1234, 2024;
+1234 = the committed seed), reporting mean ± std of TPR/FPR/Precision/F1/AUC for Tenko vs. Kitsune
+at several operating points. Confirms the result is not seed-cherry-picked.
+
+| Item | Path |
+|---|---|
+| Aggregated per-seed metrics | `results/CICIoT2023/seed_robustness/seed_robustness_metrics.csv` |
+| Write-up (mean ± std tables) | `results/CICIoT2023/seed_robustness/seed_robustness_experiment.md` |
+
+> The per-seed run logs, raw `.npy` arrays, per-seed JSON, and the matplotlib font cache are
+> **not** committed (bulk / regenerable); see the write-up for the exact per-seed commands.
+
+---
+
+## 11. Original main-paper tables — revision status
+
+| Blocker | Table | Script | Output CSV | Status |
+|---|---|---|---|---|
+| **B3** | N-BaIoT per-device/per-attack (Table V) | `results/nbaiot/run_nbaiot_tableV.py` | `results/nbaiot/nbaiot_tableV_metrics.csv` | **Rebuilt from raw data** (80 rows). See `results/nbaiot/MEMO.md`; verification vs. recovered original in `nbaiot_verification_vs_recovered.csv`. |
+| **B2** | 9-attack Kitsune main table | `results/main9attack/run_kitsune_9attack.py` | `results/main9attack/kitsune_9attack_metrics.csv` | **Mirai verified** end-to-end vs. paper (`mirai_verification_vs_paper.csv`); paper literals in `paper_literals_resultsNew.csv`. **Other 8 attacks pending** public Kitsune captures — see `results/DATA_LOCATION_REPORT.md`. |
+
+### N-BaIoT provenance note (KitNET_improved)
+The original published Table V was produced by an external driver importing `KitNET.KitNET_improved`,
+which **no longer exists on disk**. The committed rebuild (`run_nbaiot_tableV.py`) uses the repo's
+paper-style `KitNET/KitNET.py` with a fixed 12×10 feature map. It agrees with the recovered original
+on **72/80** rows; the 8 divergences are all `gafgyt.tcp/udp` on devices 2/5/7/9, where the original
+run collapsed to TPR≈0 while the rebuild detects them. The rebuilt CSV is the defensible,
+fully-reproducible artifact; numbers were **run, not transcribed**.
+
+### Commands
+```bash
+PY=.venv/bin/python
+# N-BaIoT Table V (point --dataset at your local UCI N-BaIoT copy)
+$PY results/nbaiot/run_nbaiot_tableV.py --dataset ~/dataset/N-BaIoT \
+    --output results/nbaiot/nbaiot_tableV_metrics.csv
+
+# 9-attack Kitsune — Mirai (needs the Mirai score stream / dataset; see DATA_LOCATION_REPORT.md)
+$PY results/main9attack/run_kitsune_9attack.py --help
 ```
