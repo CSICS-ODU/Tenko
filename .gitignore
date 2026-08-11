@@ -160,8 +160,16 @@ cython_debug/
 #.idea/
 
 # ---------------------------------------------------------------------------
+# Public release: GitHub tracks only the top-level README.md as markdown.
+# Local memo / experiment write-ups may remain on disk but stay untracked.
+# ---------------------------------------------------------------------------
+*.md
+!/README.md
+
+# ---------------------------------------------------------------------------
 # Public release (public-release branch): exclude large / raw / regenerable
-# artifacts. See REPRODUCIBILITY.md for how to obtain or regenerate these.
+# artifacts. See the top-level README.md reproducibility section for how to
+# obtain or regenerate these.
 # ---------------------------------------------------------------------------
 # Extra virtualenvs (only .venv is covered above)
 .venv314/
