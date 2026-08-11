@@ -54,23 +54,31 @@ CICIoT2023 driver:
 python run_ciciot2023.py --attacks all
 ```
 
+Figure reproduction scripts live under `reproducibility/plots/` (outputs stay under `results/.../figs/`).
+
 Regenerate CICIoT2023 RMSE timeline plots from committed CSVs:
 
 ```bash
-python results/CICIoT2023/figs/plot_rmse_from_csv.py
+python reproducibility/plots/plot_rmse_from_csv_ciciot.py
 ```
 
 Regenerate Kitsune-dataset (OS Scan / SSDP) RMSE timelines from committed CSVs:
 
 ```bash
-python results/main9attack/figs/plot_rmse_from_csv.py
+python reproducibility/plots/plot_rmse_from_csv_kitsune.py
+```
+
+CICIoT2023 t-SNE (requires committed feature matrices under `results/CICIoT2023/baselines/features/`):
+
+```bash
+MPLBACKEND=Agg python reproducibility/plots/plot_tsne.py
 ```
 
 OS Scan Adjusted Anomaly Scores (`results.py` path) and Kitsune anomaly scores (`example.py` / `plot_loss`):
 
 ```bash
-MPLBACKEND=Agg python results/main9attack/plot_os_scan_adjusted_anomaly.py
-MPLBACKEND=Agg python results/main9attack/plot_os_scan_example_anomaly.py
+MPLBACKEND=Agg python reproducibility/plots/plot_os_scan_adjusted_anomaly.py
+MPLBACKEND=Agg python reproducibility/plots/plot_os_scan_example_anomaly.py
 ```
 
 # Datasets
