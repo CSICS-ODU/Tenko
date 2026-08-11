@@ -85,7 +85,7 @@ def plot_loss(RMSEs, interval=100, fig_name = None, benignLimit=100000, FMgrace 
     # cmap = copy.copy(mpl.cm.get_cmap("RdYlGn_r"))
     # cmap.set_over('red')
     # cmap.set_under('green')
-    cmap = cm.get_cmap('RdYlGn_r')
+    cmap = plt.get_cmap('RdYlGn_r')  # cm.get_cmap removed in recent matplotlib
 
     FP = len([i for i in benignSample if i > threshold])/len(benignSample)
 

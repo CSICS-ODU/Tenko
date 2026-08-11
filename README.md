@@ -66,6 +66,13 @@ Regenerate Kitsune-dataset (OS Scan / SSDP) RMSE timelines from committed CSVs:
 python results/main9attack/figs/plot_rmse_from_csv.py
 ```
 
+OS Scan Adjusted Anomaly Scores (`results.py` path) and Kitsune anomaly scores (`example.py` / `plot_loss`):
+
+```bash
+MPLBACKEND=Agg python results/main9attack/plot_os_scan_adjusted_anomaly.py
+MPLBACKEND=Agg python results/main9attack/plot_os_scan_example_anomaly.py
+```
+
 # Datasets
 
 Organize downloaded data under this repository, then point the scripts at your local paths.

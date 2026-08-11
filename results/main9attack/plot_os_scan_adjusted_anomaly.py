@@ -13,15 +13,15 @@ commits; commented today in ``results.py`` / git ``TEST.py``). Exact block:
     plt.title(\"Adjusted Anomaly Scores\")
 
 This script re-runs that collection + plot with OS Scan artifacts (memorySize=6,
-blocking). Scatter uses ``interval=1000`` — the ``get_adversarial_IPs`` default and
-the density implied by the x-label ``Time elapsed [1000 mins]`` / paper screenshots.
-(Historical ``results.main`` passed ``interval=1``, which overplots every packet.)
-Does not edit ``results.py`` aesthetics.
+blocking). Default scatter ``interval=100`` (denser than 1000, lighter than 1).
+Override with ``--interval``. Does not edit ``results.py`` aesthetics.
 
   MPLBACKEND=Agg .venv/bin/python results/main9attack/plot_os_scan_adjusted_anomaly.py
+  MPLBACKEND=Agg .venv/bin/python results/main9attack/plot_os_scan_adjusted_anomaly.py --interval 200
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import os
 import sys
@@ -49,9 +49,9 @@ DATA_OUT = FIGS / "data"
 
 GRACE = 55_000  # FMgrace + ADgrace
 BENIGN_LIMIT = 100_000
-# memorySize/blocking match e458380 results.main; interval uses get_adversarial_IPs
-# default (1000) for paper-like scatter density (main() used 1 → densest overplot).
-INTERVAL = 1000
+# memorySize/blocking match e458380 results.main; interval=100 is denser than the
+# get_adversarial_IPs default (1000) without the overplot of main()'s interval=1.
+INTERVAL = 100
 MEMORY_SIZE = 6
 BLOCKCHAIN_MODE = "blocking"
 
@@ -247,12 +247,29 @@ def _fmt(v) -> str:
     return f"{float(v):.8g}"
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument(
+        "--interval",
+        type=int,
+        default=INTERVAL,
+        help=f"scatter / CSV bin size (default {INTERVAL}; try 200 if too heavy)",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
+    interval = args.interval
+    if interval < 1:
+        raise SystemExit("--interval must be >= 1")
+
     for p in (NPZ, LABELS_CSV, TSV):
         if not p.is_file():
             raise SystemExit(f"missing required input: {p}")
 
     print("Loading RMSEs / labels / IPs...")
+    print(f"interval={interval}")
     RMSEs = load_rmse_full().tolist()
     LABELS = R.build_label_list(str(LABELS_CSV), label_col="x")
     IPs, IPd = R.build_IP_list(str(TSV))
@@ -262,7 +279,7 @@ def main() -> None:
 
     gold, pred, scores, ip_keys, threshold, train_max = get_adversarial_IPs_adjusted_plot(
         IPs, IPd, LABELS, RMSEs,
-        interval=INTERVAL,
+        interval=interval,
         memorySize=MEMORY_SIZE,
         blockchainMode=BLOCKCHAIN_MODE,
     )
@@ -271,7 +288,7 @@ def main() -> None:
     print(f"gold len={len(gold)} pred sum={sum(pred)}")
 
     export_scores_csv(
-        scores, ip_keys, DATA_OUT / "os_scan_adjusted_anomaly_scores.csv", interval=INTERVAL
+        scores, ip_keys, DATA_OUT / "os_scan_adjusted_anomaly_scores.csv", interval=interval
     )
 
 
