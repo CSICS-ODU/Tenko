@@ -13,9 +13,9 @@
 # DELETE that range, so we deliberately avoid that footgun.
 set -euo pipefail
 
-RAW=/Users/sbhola/Desktop/cic/dataset/CICIoT2023/raw
-OUT=/Users/sbhola/Desktop/cic/pilot                 # big pcaps/tsvs live OUTSIDE the git repo
-LAB=/Users/sbhola/Desktop/Tenko/results/CICIoT2023  # small label CSVs live in-repo (not committed)
+RAW="${CIC_RAW_ROOT:-./data/ciciot2023/raw}"
+OUT="${CIC_DATA_ROOT:-./data/ciciot2023/pilot}"                 # big pcaps/tsvs live OUTSIDE the git repo
+LAB="${CIC_RESULTS_ROOT:-./results/CICIoT2023}"  # small label CSVs live in-repo (not committed)
 mkdir -p "$OUT" "$LAB"
 
 N_LEAD=150000

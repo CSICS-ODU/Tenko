@@ -1,8 +1,8 @@
 # CICIoT2023 pilot — per-attack **attack-purity verification**
 
-*Repo:* `/Users/sbhola/Desktop/Tenko` (branch `correct-latency`). **Read-only analysis.** No git commit.
+*Repo:* `<repo-root>/Tenko` (branch `correct-latency`). **Read-only analysis.** No git commit.
 Every number below is computed directly from the pilot TSVs
-`/Users/sbhola/Desktop/cic/pilot/stream_*.pcap.tsv` and is reproducible with the two helper
+`<path-to-ciciot2023-pilot>/stream_*.pcap.tsv` and is reproducible with the two helper
 scripts committed alongside this memo (`_attack_purity.py`, `_attack_purity_quant.py`) or with the
 `awk` one-liners cited inline. **Nothing here is invented.**
 
@@ -212,4 +212,4 @@ The signature axis **agrees with** the audit on the flood classes and **splits t
 - `python3 results/CICIoT2023/_attack_purity_quant.py` — signature-flow shares + 3-way partition.
 - Spot-check `awk` (attack rows 180002–230001), e.g. DDoS UDP→victim:
   `awk -F'\t' 'NR>=180002&&NR<=230001&&$6=="192.168.137.30"&&$10!=""{c++}END{print c}'
-  /Users/sbhola/Desktop/cic/pilot/stream_DDoS-UDP_Flood.pcap.tsv` → 47762.
+  <path-to-ciciot2023-pilot>/stream_DDoS-UDP_Flood.pcap.tsv` → 47762.

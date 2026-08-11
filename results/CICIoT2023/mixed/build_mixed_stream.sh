@@ -25,9 +25,9 @@
 # This is a NEW script; the original is untouched.
 set -euo pipefail
 
-RAW_BENIGN=/Users/sbhola/Desktop/cic/dataset/CICIoT2023/raw/BenignTraffic.pcap
-PILOT=/Users/sbhola/Desktop/cic/pilot          # attack _sub.pcaps live here (READ-only)
-MIX=/Users/sbhola/Desktop/Tenko/results/CICIoT2023/mixed   # ALL new outputs go here
+RAW_BENIGN="${CIC_RAW_ROOT:-./data/ciciot2023/raw}/BenignTraffic.pcap"
+PILOT="${CIC_DATA_ROOT:-./data/ciciot2023/pilot}"          # attack _sub.pcaps live here (READ-only)
+MIX="${CIC_RESULTS_ROOT:-./results/CICIoT2023}/mixed"   # ALL new outputs go here
 mkdir -p "$MIX"
 
 # Keep any tshark/mergecap/editcap temp files inside the workspace sandbox.

@@ -1,6 +1,6 @@
 # CICIoT2023 — Independent Per-Attack Benign Windows
 
-*Repo:* `/Users/sbhola/Desktop/Tenko` (branch `correct-latency`). Every number below comes
+*Repo:* `<repo-root>/Tenko` (branch `correct-latency`). Every number below comes
 from an actual run of the pipeline in this directory (no fabricated values). Reproduce with
 `results/CICIoT2023/indep/build_indep_streams.sh` (build) and
 `results/CICIoT2023/indep/run_indep.py` (run). All outputs live under

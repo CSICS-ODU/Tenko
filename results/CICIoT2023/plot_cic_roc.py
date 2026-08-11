@@ -35,7 +35,7 @@ from sklearn.metrics import roc_curve, roc_auc_score
 
 OUT = os.path.dirname(os.path.abspath(__file__))
 FIGS = os.path.join(OUT, "figs")
-PILOT = "/Users/sbhola/Desktop/cic/pilot"  # same as source_level_experiment.py / run driver
+PILOT = os.environ.get("CIC_DATA_ROOT", "./data/ciciot2023/pilot")  # same as source_level_experiment.py / run driver
 
 # Stream layout (stream_counts.csv): [benign_lead][benign_test][attack].
 N_LEAD, N_TEST, N_ATK = 150000, 30000, 50000

@@ -1,6 +1,6 @@
 # CICIoT2023 — Single-tanh + Reduced Benign Split + Tolerance Grid-Search
 
-*Repo:* `/Users/sbhola/Desktop/Tenko` (branch `correct-latency`). Every number below is
+*Repo:* `<repo-root>/Tenko` (branch `correct-latency`). Every number below is
 computed from actual runs / cached arrays and is reproducible with the scripts named
 inline. Honesty note is enforced throughout: operating points that use attack labels are
 labelled **ORACLE**; benign-only operating points use **no** attack labels.

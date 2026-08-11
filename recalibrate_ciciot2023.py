@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 
-OUT = "/Users/sbhola/Desktop/Tenko/results/CICIoT2023"
+OUT = os.environ.get("CIC_RESULTS_ROOT", "./results/CICIoT2023")
 ATTACKS = ["DDoS-UDP_Flood", "DoS-SYN_Flood", "Recon-OSScan",
            "MITM-ArpSpoofing", "Mirai-greeth_flood", "DictionaryBruteForce"]
 COMMITTED_ETA_G = 50.0

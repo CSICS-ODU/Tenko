@@ -31,7 +31,10 @@ import time
 import numpy as np
 
 # Run from repo root so `import results` / `from Kitsune import Kitsune` work.
-REPO = "/Users/sbhola/Desktop/Tenko"
+REPO = os.environ.get(
+    "TENKO_REPO",
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+)
 if REPO not in sys.path:
     sys.path.insert(0, REPO)
 

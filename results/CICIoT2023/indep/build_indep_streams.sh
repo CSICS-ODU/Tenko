@@ -20,9 +20,9 @@
 # NOTE: macOS default bash is 3.2 (no `declare -A`), so parallel indexed arrays.
 set -euo pipefail
 
-RAW=/Users/sbhola/Desktop/cic/dataset/CICIoT2023/raw
-ATKDIR=/Users/sbhola/Desktop/cic/pilot                     # attack _sub.pcap live here (READ)
-OUT=/Users/sbhola/Desktop/Tenko/results/CICIoT2023/indep   # ALL new outputs INSIDE workspace
+RAW="${CIC_RAW_ROOT:-./data/ciciot2023/raw}"
+ATKDIR="${CIC_DATA_ROOT:-./data/ciciot2023/pilot}"                     # attack _sub.pcap live here (READ)
+OUT="${CIC_RESULTS_ROOT:-./results/CICIoT2023}/indep"   # ALL new outputs INSIDE workspace
 mkdir -p "$OUT"
 
 N_BEN=120000

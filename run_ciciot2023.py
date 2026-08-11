@@ -37,8 +37,8 @@ ADGRACE = 50000
 TRAIN_START_IDX = FMGRACE + ADGRACE + 1  # first index used for benign calibration
 MAD_K = 3.0                               # Kitsune threshold = median + K*1.4826*MAD
 
-BIG_DIR = "/Users/sbhola/Desktop/cic/pilot"
-OUT_DIR = "/Users/sbhola/Desktop/Tenko/results/CICIoT2023"
+BIG_DIR = os.environ.get("CIC_DATA_ROOT", "./data/ciciot2023/pilot")
+OUT_DIR = os.environ.get("CIC_RESULTS_ROOT", "./results/CICIoT2023")
 
 ATTACKS = [
     "DDoS-UDP_Flood",

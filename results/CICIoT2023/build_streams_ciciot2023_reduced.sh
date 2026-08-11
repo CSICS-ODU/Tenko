@@ -34,9 +34,9 @@
 # provided for provenance / reproducibility if a physical rebuild is preferred.
 set -euo pipefail
 
-RAW=/Users/sbhola/Desktop/cic/dataset/CICIoT2023/raw
-OUT=/Users/sbhola/Desktop/cic/pilot_reduced                 # SEPARATE dir; originals intact
-LAB=/Users/sbhola/Desktop/Tenko/results/CICIoT2023
+RAW="${CIC_RAW_ROOT:-./data/ciciot2023/raw}"
+OUT="${CIC_PILOT_REDUCED:-./data/ciciot2023/pilot_reduced}"  # SEPARATE dir; originals intact
+LAB="${CIC_RESULTS_ROOT:-./results/CICIoT2023}"
 mkdir -p "$OUT" "$LAB"
 
 # Reduced, rationalized sizes:

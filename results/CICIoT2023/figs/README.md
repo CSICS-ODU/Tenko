@@ -254,7 +254,7 @@ node state), so the reduction is symmetric and disclosed. Scoring by the raw nod
   Tenko = max of per-packet **fused tolerance statistic** `nd`
   (`../arr_cont_MITM-ArpSpoofing_double.npy`), the threshold-independent signal behind the
   headline AUC — **not** the raw node score `S(n)` (`arr_node`).
-- **Per-packet source IPs:** read live from `/Users/sbhola/Desktop/cic/pilot/stream_MITM-ArpSpoofing.pcap.tsv`
+- **Per-packet source IPs:** read live from `<path-to-ciciot2023-pilot>/stream_MITM-ArpSpoofing.pcap.tsv`
   (col 4 IPv4, else col 17 IPv6), test region = `src_all[150000:]`, aligned 1:1 with the 80k
   cached score arrays.
 - **Attacker-device set (score-independent, not circular):** internal `192.168.x` sources with

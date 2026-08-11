@@ -23,8 +23,8 @@ import numpy as np
 from collections import Counter
 from sklearn.metrics import roc_auc_score, roc_curve
 
-PILOT = "/Users/sbhola/Desktop/cic/pilot"
-OUT = "/Users/sbhola/Desktop/Tenko/results/CICIoT2023"
+PILOT = os.environ.get("CIC_DATA_ROOT", "./data/ciciot2023/pilot")
+OUT = os.environ.get("CIC_RESULTS_ROOT", "./results/CICIoT2023")
 ATTACKS = ["DDoS-UDP_Flood","DoS-SYN_Flood","Recon-OSScan",
            "MITM-ArpSpoofing","Mirai-greeth_flood","DictionaryBruteForce"]
 N_LEAD, N_TEST, N_ATK = 150000, 30000, 50000
