@@ -169,9 +169,14 @@ cython_debug/
 .venv_vae/
 # macOS / office cruft
 .DS_Store
+*.DS_Store
 **/.DS_Store
 ~$*.docx
 *.pptx
+# matplotlib font cache written next to figure scripts (never publish)
+**/mplcache/
+# scratch/debug logs (also covered by *.log above; kept explicit for clarity)
+*.log
 # Vendored upstream baseline source (Kitsune/Mateen/VAEESDD/etc.).
 # Attribution + upstream URLs are documented in REPRODUCIBILITY.md.
 external/
