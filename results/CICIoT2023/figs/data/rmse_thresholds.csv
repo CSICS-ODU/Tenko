@@ -1,0 +1,5 @@
+attack,detector,score,benign_median_mad_threshold
+DoS-SYN_Flood,kitsune,tanh(RMSE),0.012814
+DoS-SYN_Flood,tenko,node_score_S(n),0.015781
+MITM-ArpSpoofing,kitsune,tanh(RMSE),0.012814
+MITM-ArpSpoofing,tenko,node_score_S(n),0.015781

@@ -1,0 +1,7 @@
+attack,start_idx,end_idx,n_packets
+DoS-SYN_Flood,120000,170000,50000
+DDoS-UDP_Flood,170000,220000,50000
+Recon-OSScan,220000,270000,50000
+MITM-ArpSpoofing,270000,320000,50000
+Mirai-greeth_flood,320000,370000,50000
+DictionaryBruteForce,370000,420000,50000

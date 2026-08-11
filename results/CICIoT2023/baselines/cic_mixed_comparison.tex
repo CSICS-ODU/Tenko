@@ -1,0 +1,96 @@
+% Self-contained fragment for \input{} into a paper or rebuttal.
+% Not a complete document: do not compile this file alone on Overleaf.
+% Use cic_mixed_comparison_standalone.tex as the root instead.
+%
+% Requires (in the host preamble): \usepackage{booktabs}
+% Host class must define \subsection / \paragraph (article, IEEEtran, acmart, ...).
+% This fragment uses \caption inside a table float; that command comes from the
+% host document class. It does not load caption.sty.
+%
+% If the host paper loads \usepackage{caption} with a custom / non-standard
+% class, caption.sty may warn:
+%   Package caption Warning: Unknown document class (or package),
+%   standard defaults will be used.
+% That warning is usually benign (caption falls back to standard defaults).
+% To silence: \usepackage{silence}\WarningFilter{caption}{Unknown document class}
+% Or omit caption.sty if the class already provides adequate \caption support
+% (many IEEE/ACM classes do).
+%
+% Source metrics: table_ix_mixed_with_iforest.csv (mixed CICIoT2023 stream).
+% Macro F1 is the per-attack (attack-class-aware) definition used in that CSV,
+% not binary 2-class macro-F1.
+
+\subsection{Mixed-attack CICIoT2023 comparison}
+\label{sec:cic-mixed-baselines}
+
+\paragraph{Dataset configuration.}
+We evaluate on a mixed CICIoT2023 stream constructed from
+$120{,}000$ benign packets followed by six attack types at $50{,}000$ packets each
+(DDoS-UDP Flood, DoS-SYN Flood, Dictionary Brute Force, MITM-ARP Spoofing,
+Mirai greeth flood, and Recon-OS Scan; $300{,}000$ attack packets in total).
+Models train or calibrate on the initial benign prefix
+($\texttt{benignLimit}{=}60{,}000$);
+all reported metrics are computed on the subsequent test region of
+$60{,}000$ held-out benign packets and $300{,}000$ attack packets.
+
+\begin{table}[t]
+\centering
+\caption{Mixed CICIoT2023 stream: binary detection metrics on the test region
+($60$k benign~$+$~$300$k attack).
+Tenko uses a benign-calibrated OR-rule operating point targeting approximately
+$2\%$ benign FPR.
+Macro~F1 follows the per-attack definition in
+\texttt{table\_ix\_mixed\_with\_iforest.csv}.
+VAEESDD is the frozen-after-benign variant (recovered from streaming collapse).
+Isolation Forest follows Ramkumar~et~al., adapted to AfterImage features.}
+\label{tab:cic-mixed-baselines}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lrrrrrrr@{}}
+\toprule
+Method & TPR & FPR & Prec. & F1 & Macro F1 & Acc. & AUC--ROC \\
+\midrule
+Tenko\footnote{Benign-calibrated OR-rule operating point targeting $\sim$2\% benign FPR; the method name itself does not encode the FPR target.}
+  & 0.9801 & 0.0200 & 0.9959 & 0.9879 & 0.9780 & 0.9801 & 0.9897 \\
+Kitsune
+  & 0.9637 & 0.1971 & 0.9607 & 0.9622 & 0.8758 & 0.9369 & 0.9733 \\
+Mateen
+  & 0.9048 & 0.0488 & 0.9893 & 0.9452 & 0.9189 & 0.9126 & 0.9665 \\
+VAEESDD
+  & 0.8251 & 0.0140 & 0.9966 & 0.9028 & 0.8861 & 0.8519 & 0.9540 \\
+Isolation Forest (Ramkumar et~al.)
+  & 0.6115 & 0.0514 & 0.9835 & 0.7541 & 0.6769 & 0.6677 & 0.9347 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Reading Precision and FPR.}
+VAEESDD attains the lowest FPR ($0.014$) and the highest Precision ($0.9966$) in
+Table~\ref{tab:cic-mixed-baselines}.
+These figures characterize a \emph{conservative} detector: it raises few false
+alarms and therefore rarely mistakes benign traffic for attack.
+They do \emph{not} imply superior detection overall.
+At this operating point VAEESDD recalls only $82.5\%$ of attack packets
+(TPR~$0.8251$), well below Tenko ($0.9801$), and lags on F1, Macro~F1,
+Accuracy, and AUC--ROC.
+
+\paragraph{Matched false-alarm budget.}
+In NIDS deployment, the operative question is detection rate at a fixed false-alarm
+budget rather than Precision at an unconstrained (often very conservative) threshold.
+Calibrating VAEESDD scores on the same held-out benign test mass to a matched
+$\sim$2\% FPR yields TPR~$\approx 0.8385$, versus Tenko's TPR~$0.9801$ at FPR~$0.0200$.
+Thus the Precision/FPR advantage of VAEESDD disappears under a fair alarm budget:
+Tenko recovers substantially more attacks at the same benign FPR target.
+
+\paragraph{Defensibility of the Tenko result.}
+Under the reported operating point, Tenko leads on TPR, F1, Macro~F1, Accuracy, and
+AUC--ROC while remaining at a practical low-FPR regime ($\mathrm{FPR}{=}0.02$).
+Its AUC--ROC ($0.9897$) is also the best ranking among the compared methods,
+indicating that the advantage is not an artifact of a single threshold.
+Gains persist under a matched false-alarm budget, as above.
+The baselines are competent rather than strawmen: Kitsune is a strong streaming
+reference; Mateen is an adaptive deep baseline; VAEESDD is a frozen VAE recovered
+from a collapsed streaming configuration; and Isolation Forest follows
+Ramkumar~et~al., adapted here to AfterImage features for a fair feature-space
+comparison.
+ASP-based diagnosis is not applicable in this binary mixed-stream setting and is
+omitted.

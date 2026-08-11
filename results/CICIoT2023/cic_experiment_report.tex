@@ -1,0 +1,654 @@
+\documentclass[11pt]{article}
+
+% ---------------------------------------------------------------------------
+% Self-contained discussion report on the CICIoT2023 Tenko experiment.
+% Compiles with pdflatex out of the box (no external figures/bibliography).
+% Every number traces to results/CICIoT2023/*.csv or the verified *.md artifacts;
+% see the provenance appendix. No number is invented.
+% ---------------------------------------------------------------------------
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+\usepackage{url}
+
+% Breakable, verbatim typewriter path/command (breaks long file:line strings).
+\DeclareUrlCommand\srcpath{\urlstyle{tt}}
+\makeatletter
+\g@addto@macro\UrlBreaks{\do\:\do\-\do\,}
+\makeatother
+% Ragged, wrapping X column for tabularx.
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\newcommand{\etag}{\ensuremath{\eta_{\mathrm{global}}}}
+\newcommand{\etan}{\ensuremath{\eta_{\mathrm{node}}}}
+\newcommand{\lt}{\ensuremath{<}}
+
+\title{Tenko on CICIoT2023: An End-to-End Experiment Report\\
+\large A discussion memo for internal circulation}
+\author{Tenko team}
+\date{\today}
+
+\begin{document}
+\maketitle
+% Prefer stretched interword spacing over overfull boxes in prose paragraphs.
+\sloppy
+
+\begin{abstract}
+This memo documents, end to end, our evaluation of Tenko on \textbf{CICIoT2023}, the
+recent IoT dataset requested by Reviewers~1.2 and~3.2. It explains \emph{why} each decision
+was made: why we used the raw PCAP rather than the CSVs (Tenko's node key is the per-packet
+source IP), how we built the benign/attack streams, and the two changes we made to run Tenko on
+this dataset --- a benign-only recalibration of the tolerance factors $\eta$ (the committed
+values are degenerate here) and the handling of a redundant double-$\tanh$ in the committed
+pipeline. We headline threshold-independent \textbf{AUC/EER} because we found that a fixed
+benign-calibrated $\eta$ does \emph{not} reproduce a target false-positive rate out-of-sample on
+this non-stationary benign trace. We then compare against the paper's existing Kitsune-dataset
+results. Bottom line: CICIoT2023 is \textbf{consistent with the paper's reliable-vs-degraded
+story}, Tenko's node-aggregation advantage reproduces on the sustained-deviation attacks
+(MITM, Mirai), but Tenko is \emph{competitive, not uniformly superior} to Kitsune here --- a
+\textbf{qualified yes}. All figures are traceable (Appendix~\ref{sec:prov}).
+\end{abstract}
+
+\tableofcontents
+\bigskip
+\hrule
+\bigskip
+
+% ===========================================================================
+\section{Motivation: why CICIoT2023, and why now}
+\label{sec:motivation}
+
+The R1 reviewers asked us to justify evaluating on datasets that are several years old and to
+demonstrate the method on a \emph{recent} trace. Specifically, Reviewer~1.2 (``run recent, CIC
+IDS 2023'') and Reviewer~3.2 (``motivate old datasets; recency'') both request a modern dataset.
+There is no separate ``CIC-IDS2023''; the reviewers' request maps to \textbf{CICIoT2023}
+(University of New Brunswick / Canadian Institute for Cybersecurity,
+\url{https://www.unb.ca/cic/datasets/iotdataset-2023.html}).
+
+CICIoT2023 is the \emph{right} recent dataset for Tenko for three concrete reasons:
+\begin{enumerate}
+  \item It ships \textbf{raw PCAP}, so we get \emph{ordered per-packet streams} --- Tenko is a
+        streaming, packet-level detector.
+  \item It provides a \textbf{benign reference window}, which Tenko needs for benign-only
+        calibration (no attack labels at training time).
+  \item It preserves \textbf{per-packet source identity} (source IP), which is Tenko's
+        \emph{node key} for the node-level aggregation that is the paper's core contribution.
+\end{enumerate}
+These are exactly the properties several other ``recent'' options lack (see
+Section~\ref{sec:dataset}).
+
+% ===========================================================================
+\section{The dataset}
+\label{sec:dataset}
+
+\paragraph{What it is.} CICIoT2023 is a large IoT security dataset built from a testbed of
+\textbf{105 real IoT devices}, containing benign traffic and \textbf{7 attack families}
+(DDoS, DoS, Recon, Web, Brute Force, Spoofing, and Mirai). The full raw PCAP corpus is very large
+($\approx$548\,GB); the CSV package alone is $\approx$13\,GB.
+
+\paragraph{The load-bearing decision: PCAP, not CSV.} Tenko's contribution is node-level
+aggregation, and a node is identified by the \textbf{per-packet source IP}. The widely used
+CICIoT2023 \emph{CSVs drop that column} --- we verified the downloaded CSV package is
+``39 aggregate features + Label with \textbf{no} source IP / flow-id / timestamp,'' which makes
+node aggregation impossible (not even a pseudo-node). The same disqualifier applies to the earlier
+``IDS 2025'' folder we investigated, which turned out to be \textbf{CSE-CIC-IDS2018} flow CSVs
+(80 CICFlowMeter features $+$ \texttt{Label}, \emph{no} source-IP column) --- incompatible with
+Tenko's packet pipeline. We therefore ingest CICIoT2023 from \textbf{PCAP}.
+
+\paragraph{Classes used and raw sizes.} We used a \textbf{6-class pilot}, one PCAP per class,
+plus benign traffic (4 chunks, $\approx$7\,GB from \texttt{BenignTraffic*.pcap}). Table~\ref{tab:classes}
+lists the classes and their raw on-disk sizes.
+
+\begin{table}[t]
+\centering
+\caption{The six CICIoT2023 attack classes used in the pilot and their raw PCAP sizes on disk.}
+\label{tab:classes}
+\begin{tabular}{llr}
+\toprule
+\textbf{Class} & \textbf{Source PCAP} & \textbf{Raw size} \\
+\midrule
+DDoS-UDP Flood         & \texttt{DDoS-UDP\_Flood.pcap}        & 2.048\,GB \\
+DoS-SYN Flood          & \texttt{DoS-SYN\_Flood.pcap}         & 2.048\,GB \\
+Recon (OS Scan)        & \texttt{Recon-OSScan.pcap}           & 324\,MB \\
+MITM (ARP Spoofing)    & \texttt{MITM-ArpSpoofing.pcap}       & 2.046\,GB \\
+Mirai (greeth flood)   & \texttt{Mirai-greeth\_flood.pcap}    & 2.048\,GB \\
+Dictionary Brute Force & \texttt{DictionaryBruteForce.pcap}   & 39\,MB \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Label semantics.} CICIoT2023 has \textbf{no per-packet ground-truth file}; the class
+\emph{is} the capture-session identity --- i.e., the PCAP a packet came from. The binary label is
+$0$ if the packet is from \texttt{BenignTraffic}, and $1$ otherwise. This session-level labelling
+is standard for this dataset and is why we build one benign-vs-single-attack stream per class.
+
+% ===========================================================================
+\section{Experimental protocol}
+\label{sec:protocol}
+
+\paragraph{PCAP $\rightarrow$ TSV.} Every PCAP is converted with \texttt{tshark} to the exact
+19-column field order Tenko's \texttt{FeatureExtractor} expects. The \textbf{source IP} --- the
+node key --- is \textbf{column 4 (IPv4)} or \textbf{column 17 (IPv6)}; the conversion script
+warns ``do not reorder,'' and the order was verified against
+\texttt{FeatureExtractor.pcap2tsv\_with\_tshark()}.
+
+\paragraph{Pilot subsampling (``first-$N$'').} Because the class PCAPs are multi-GB, we extract the
+\emph{first $N$ packets} per source with \texttt{tshark -c N -w} (it stops early instead of scanning
+the whole file). The window sizes are fixed constants:
+$N_{\text{lead}}=150{,}000$, $N_{\text{test}}=30{,}000$, $N_{\text{atk}}=50{,}000$.
+
+\paragraph{Stream layout (Table~\ref{tab:layout}).} Each per-attack stream is the concatenation
+\textbf{[benign\_lead] $+$ [benign\_test] $+$ [attack]} with packet order preserved, giving
+$230{,}000$ packets, identical for all six classes.
+
+\begin{table}[t]
+\centering
+\caption{Per-attack stream layout (identical for all six classes). \texttt{benignLimit} $=$ length
+of benign\_lead $= 150{,}000$.}
+\label{tab:layout}
+\small
+\begin{tabular}{lccr}
+\toprule
+\textbf{Region} & \textbf{Label} & \textbf{Index range (0-based)} & \textbf{Size} \\
+\midrule
+benign\_lead (KitNET train $+$ pattern calibration) & 0 & $0 \ldots 149{,}999$     & 150{,}000 \\
+benign\_test (FPR negatives)                        & 0 & $150{,}000 \ldots 179{,}999$ & 30{,}000 \\
+attack (TPR positives)                              & 1 & $180{,}000 \ldots 229{,}999$ & 50{,}000 \\
+\midrule
+\textbf{total per stream} & --- & --- & \textbf{230{,}000} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why benign train and test come from the \emph{same} trace.} \texttt{benign\_lead} is the
+first $150{,}000$ packets of \texttt{BenignTraffic.pcap}; \texttt{benign\_test} is packets
+$150{,}001 \ldots 180{,}000$ of the \emph{same} file. Drawing both from one benign trace follows the
+standard Kitsune protocol (benign train $+$ benign test from a single trace) and avoids cross-session
+distribution shift that would artificially inflate the measured FPR. The attack region is the first
+$50{,}000$ packets of the class PCAP.
+
+\paragraph{KitNET grace.} Within KitNET, the first $\text{FMgrace}=5{,}000$ (feature-mapping) $+$
+$\text{ADgrace}=50{,}000$ (anomaly-detector) packets are grace/training, so benign \emph{calibration}
+for thresholds begins at index $55{,}001$ and runs to \texttt{benignLimit} $=150{,}000$.
+
+\paragraph{What the driver runs.} For each stream, \texttt{run\_ciciot2023.py}:
+\begin{enumerate}
+  \item Streams the TSV through \textbf{KitNET (X1)} to produce one raw RMSE per packet, with a
+        guaranteed 1:1 RMSE$\leftrightarrow$packet$\leftrightarrow$label alignment (a parse error
+        yields a neutral $0.0$ rather than truncating the stream).
+  \item Runs the \textbf{Kitsune baseline}: per-packet $\tanh(\text{RMSE})$ with a benign
+        Median$+$MAD threshold, $\text{thr}=\text{median}+3.0\cdot 1.4826\cdot\text{MAD}$, calibrated
+        on $[55{,}001:150{,}000]$ and evaluated on the test region.
+  \item Runs \textbf{Tenko X2--X4} via \texttt{get\_adversarial\_IPs\_weighted\_pattern($\cdot$)}
+        with \texttt{benignLimit}$=150{,}000$, \texttt{memorySize}$=60$,
+        \texttt{pattern\_window\_size}$=100$, \texttt{pattern\_segments}$=10$, fusion weights
+        $0.5/0.5$, threshold $0.5$.
+\end{enumerate}
+
+\paragraph{What it persists.} The driver saves per-test-packet arrays --- \texttt{arr\_gold\_*},
+\texttt{arr\_ndg\_*} and \texttt{arr\_nds\_*} (the global and single-aggregate \emph{normalized}
+pattern distances), \texttt{arr\_cont\_*} (fused distance), \texttt{arr\_node\_*} (node score), and
+\texttt{arr\_kitsune\_*} (Kitsune score). Persisting these lets us re-search $\eta$ and compare the
+$\tanh$ variants \emph{offline}, without re-running X1/X2.
+
+% ===========================================================================
+\section{Changes we made, and why}
+\label{sec:changes}
+
+\subsection{Benign-only $\eta$ recalibration (the main change)}
+\label{sec:eta}
+
+\paragraph{Symptom.} With the committed operating point $\etag=50,\ \etan=20$ (fusion $0.5/0.5$,
+threshold $0.5$), Tenko was \textbf{degenerate on all six classes --- it flagged nothing}
+(TPR $=$ FPR $= 0$).
+
+\paragraph{Root cause.} The fused rule fires when a \emph{normalized} pattern distance
+$\text{nd} > \eta$, where $\text{nd} = \text{distance}/(\text{max benign training spread})$. After
+the committed squashing, the benign-normalized attack distances top out around $\sim 2.4$ --- far
+below $\etan=20$ and $\etag=50$ --- so \textbf{nothing ever fires}. In other words, \etan{} was
+mis-scaled by roughly an order of magnitude for this dataset's benign spread. This is not a harness
+bug; the committed constants simply do not transfer to CICIoT2023's benign geometry.
+
+\paragraph{Method (benign-quantile search, no attack labels).} \texttt{recalibrate\_ciciot2023.py}
+scans a shared benign quantile $q$ over $[0.50,\ 0.99999]$, sets
+$\etag=Q(\text{benign\_ndg},q)$ and $\etan=Q(\text{benign\_nds},q)$ (the $q$-quantiles of the
+\emph{benign} normalized distances), and selects the $q$ whose \emph{fused benign-only} FPR is as
+close as possible to --- but not above --- the target. Crucially, \textbf{no attack labels are used}
+to choose $\eta$; the values are a property of benign traffic only. Table~\ref{tab:eta} lists the
+result.
+
+\begin{table}[t]
+\centering
+\caption{Committed vs benign-recalibrated tolerance factors. Recalibrated values are identical across
+classes because the benign\_test spread is shared. The fix is overwhelmingly on \etan{} ($20
+\rightarrow \sim 2.2$--$2.85$), confirming it was mis-scaled.}
+\label{tab:eta}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Setting} & $\etag$ & $\etan$ & \textbf{shared $q$} \\
+\midrule
+committed (degenerate here) & 50.000 & 20.000 & --- \\
+recalibrated, target benign FPR $= 1\%$ & 40.699 & 2.854 & 0.994768 \\
+recalibrated, target benign FPR $= 5\%$ & 35.834 & 2.207 & 0.968434 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why these values are legitimate.} The paper already frames $\eta$ as ``a multiplier on
+benign deviation magnitude, \emph{not} a label-tuned operating point'' and states ``attack labels are
+not used to select these values.'' Our recalibration is exactly that: a per-deployment benign
+multiplier, re-derived from CICIoT2023's benign traffic. We did not tune $\eta$ against attack
+outcomes.
+
+\subsection{The double-$\tanh$}
+\label{sec:tanh}
+
+\paragraph{Where.} The committed pipeline applies $\tanh$ \textbf{twice}: once in
+\texttt{example.py:157} (\texttt{rmse\,=\,np.tanh(rmse)}, needed because node scoring requires a
+$[0,1]$ input) and again in \texttt{results.py:805} under a ``Normalization'' comment
+(\texttt{RMSEs\_norm\,=\,np.tanh(...)}). Composed, the released code computes
+$\tanh(\tanh(\text{raw}))$, squashing scores into $\approx[0,\ 0.762]$. The second $\tanh$ is
+\textbf{redundant}: it receives an already-squashed score.
+
+\paragraph{Impact on AUC is small (Table~\ref{tab:tanh}).} Removing the redundant second $\tanh$
+(``single'') changes the pattern-distance AUC by at most $+0.010911$ (Dictionary Brute Force), with
+a median well under $0.002$ --- i.e.\ \textbf{AUC change $\le 0.011$}.
+
+\begin{table}[t]
+\centering
+\caption{Single- vs double-$\tanh$ pattern-distance AUC on CICIoT2023. The maximum change is
+$+0.010911$ (Dictionary Brute Force); AUC is essentially invariant to the redundant second $\tanh$.}
+\label{tab:tanh}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Attack} & \textbf{double-$\tanh$ AUC} & \textbf{single-$\tanh$ AUC} & \textbf{$\Delta$ (single$-$double)} \\
+\midrule
+DDoS-UDP Flood         & 0.928822 & 0.930948 & $+0.002126$ \\
+DoS-SYN Flood          & 0.987792 & 0.988392 & $+0.000600$ \\
+Recon (OS Scan)        & 0.795871 & 0.796219 & $+0.000348$ \\
+MITM (ARP Spoofing)    & 0.949187 & 0.951141 & $+0.001954$ \\
+Mirai (greeth flood)   & 0.936728 & 0.936996 & $+0.000268$ \\
+Dictionary Brute Force & 0.696816 & 0.707727 & $+0.010911$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Impact on the operating point is larger.} Under \emph{single}-$\tanh$ the committed
+$\eta=50/20$ stops being uniformly degenerate --- it fires for $4/6$ attacks (e.g.\ DoS-SYN
+TPR $0.71518$, DDoS TPR $0.05964$) --- whereas under \emph{double} it stays degenerate. This is why
+the second $\tanh$ matters more for thresholding than for ranking.
+
+\paragraph{Reporting decision and provenance.} We report CICIoT2023 under a \textbf{fixed
+single-$\tanh$} normalization (redundant second $\tanh$ removed for this dataset), noting it is
+numerically $\approx$ the double variant (AUC $\le 0.011$). Separately, we verified that the
+\emph{main-paper} per-attack numbers were themselves generated under the \emph{double}-$\tanh$
+pipeline; those published tables therefore \textbf{stand as-is} and are described accurately, not
+silently changed. Any change to the main paper's normalization would be coordinated with co-authors,
+not made unilaterally.
+
+\subsection{Out-of-sample (OOS) calibration protocol --- added for honesty}
+\label{sec:oos}
+
+The in-sample recalibration fits $\eta$ on \texttt{benign\_test} and then measures FPR on that
+\emph{same} slice, so its $1\%/5\%$ FPR is \textbf{definitional, not predictive}. To test whether the
+FPR actually transfers, \texttt{recalibrate\_ciciot2023\_oos.py} splits \texttt{benign\_test} into two
+disjoint halves --- \textbf{CALIB $=$ first $15{,}000$}, \textbf{EVAL $=$ held-out $15{,}000$} ---
+selects $\eta$ on CALIB only (no attack labels), and measures FPR on the disjoint EVAL benign plus the
+attack region. Because the benign trace has a warm-up transient (it is non-stationary), we report
+\textbf{both split directions}: \texttt{fwd} (calibrate on the first half) and \texttt{rev}
+(calibrate on the second half). The result is Section~\ref{sec:res-oos}.
+
+% ===========================================================================
+\section{Results}
+\label{sec:results}
+
+\subsection{Full-trace threshold-independent AUC / EER (headline)}
+\label{sec:res-auc}
+
+Table~\ref{tab:auc} reports AUC and EER over the full held-out test trace
+(benign\_test $+$ attack) for Kitsune and Tenko. Tenko's AUC/EER come from the continuous
+$\eta$-normalized fused pattern distance and are \textbf{invariant to the operating point}. Tenko
+\textbf{wins on MITM and Mirai} --- the sustained-deviation attacks its node aggregation targets ---
+and is competitive but not dominant elsewhere.
+
+\begin{table}[t]
+\centering
+\caption{Full-trace AUC/EER on CICIoT2023 (benign-only training). Higher AUC and lower EER are better;
+the winner column marks the better AUC (Dictionary is mixed: Kitsune AUC but Tenko EER).}
+\label{tab:auc}
+\small
+\begin{tabular}{lccccl}
+\toprule
+\textbf{Attack} & \textbf{AUC Kitsune} & \textbf{AUC Tenko} & \textbf{EER Kitsune} & \textbf{EER Tenko} & \textbf{Winner} \\
+\midrule
+DDoS-UDP Flood         & 0.965073 & 0.928822 & 0.123863 & 0.129363 & Kitsune \\
+DoS-SYN Flood          & 0.992747 & 0.987792 & 0.036643 & 0.051803 & Kitsune \\
+MITM (ARP Spoofing)    & 0.942003 & \textbf{0.949187} & 0.147373 & \textbf{0.130690} & \textbf{Tenko} \\
+Mirai (greeth flood)   & 0.929418 & \textbf{0.936728} & 0.153343 & \textbf{0.139573} & \textbf{Tenko} \\
+Recon (OS Scan)        & 0.827176 & 0.795871 & 0.216383 & 0.255887 & Kitsune \\
+Dictionary Brute Force & 0.703386 & 0.696816 & 0.318927 & 0.284700 & mixed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Operating-point metrics at benign-calibrated $\eta$ (in-sample)}
+\label{sec:res-op}
+
+Table~\ref{tab:op} gives Tenko's operating point at the $5\%$ benign-FPR calibration
+(Table~\ref{tab:eta}). \textbf{The FPR column is in-sample by construction} (the tolerance is fit and
+the FPR measured on the same benign\_test slice); it is a calibration diagnostic, \emph{not} a
+deployment guarantee (see Section~\ref{sec:res-oos}). The reliability divider follows the paper's
+convention. For reference, the Kitsune baseline runs at a \textbf{constant} benign Median$+$MAD
+FPR $\approx 0.3233$ on every class --- i.e.\ it is \emph{not} operating at a comparably tight
+false-alarm budget, so these two systems are not compared at a matched FPR.
+
+\begin{table}[t]
+\centering
+\caption{Tenko operating-point metrics at benign-calibrated $\eta$ targeting $5\%$ FPR. FPR is
+in-sample (threshold set on test-benign); it is a calibration diagnostic, not a deployment FPR.}
+\label{tab:op}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Attack} & \textbf{TPR} & \textbf{FPR (in-sample)} & \textbf{Precision} & \textbf{F1} \\
+\midrule
+DoS-SYN Flood          & 0.962660 & 0.049967 & 0.969798 & 0.966216 \\
+MITM (ARP Spoofing)    & 0.824020 & 0.049967 & 0.964895 & 0.888910 \\
+DDoS-UDP Flood         & 0.783180 & 0.049967 & 0.963131 & 0.863884 \\
+Mirai (greeth flood)   & 0.711620 & 0.049967 & 0.959574 & 0.817203 \\
+\midrule
+\multicolumn{5}{l}{\emph{--- reliability divider (below: genuinely low AUC, a separability limit) ---}} \\
+\midrule
+Recon (OS Scan)        & 0.114620 & 0.049967 & 0.792669 & 0.200280 \\
+Dictionary Brute Force & 0.030540 & 0.049967 & 0.504627 & 0.057594 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{The out-of-sample FPR non-transfer finding (the honest caveat)}
+\label{sec:res-oos}
+
+Table~\ref{tab:oos} shows the held-out benign FPR when $\eta$ is calibrated on one benign half and
+measured on the disjoint other half. The same recipe yields $\approx 0\%$ FPR in one direction and
+$\approx 30\%$ in the other, versus the $1$--$5\%$ nominal target. \textbf{A fixed benign-calibrated
+$\eta$ does not transfer} across disjoint benign slices of this non-stationary trace. This is why the
+in-sample $1\%/5\%$ FPR must be labelled as definitional, and why the \emph{threshold-independent}
+AUC/EER (Table~\ref{tab:auc}) are the honest headline.
+
+\begin{table}[t]
+\centering
+\caption{Out-of-sample held-out benign FPR (double variant). \texttt{fwd}: calibrate on the first
+benign half, evaluate on the second; \texttt{rev}: the reverse. The realized FPR ranges from
+$\approx 0\%$ to $\approx 30\%$ against a $1$--$5\%$ target.}
+\label{tab:oos}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Target benign FPR} & \textbf{fwd (calib $=$ 1st half)} & \textbf{rev (calib $=$ 2nd half)} \\
+\midrule
+$1\%$ & 0.000 & 0.304000 \\
+$5\%$ & 0.000 & 0.319267 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+For completeness, on the OOS held-out slice the threshold-independent numbers remain stable, e.g.\
+DoS-SYN Tenko AUC/EER $= 0.993620 / 0.024487$ and MITM $= 0.984969 / 0.065113$; single-$\tanh$ tracks
+double within $\pm 0.02$ TPR, so the $\tanh$ choice is numerically irrelevant on this data.
+
+% ===========================================================================
+\section{Comparison: CICIoT2023 vs the paper's Kitsune-dataset results}
+\label{sec:compare}
+
+\paragraph{The paper's established result.} On the Kitsune dataset the paper reports AUC/EER for nine
+attacks with \textbf{Tenko $\ge$ Kitsune on all nine} (Table~\ref{tab:paper-auc}). This is the
+baseline story we are checking CICIoT2023 against.
+
+\begin{table}[t]
+\centering
+\caption{The paper's existing Kitsune-dataset AUC/EER (Tenko is the better value on all nine
+attacks). Source: manuscript table \texttt{tab:kitsune-tenko-new-highlighted}.}
+\label{tab:paper-auc}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Attack} & \textbf{AUC Kitsune} & \textbf{AUC Tenko} & \textbf{EER Kitsune} & \textbf{EER Tenko} \\
+\midrule
+Mirai Botnet      & 0.95 & 0.996 & 0.05 & \lt 0.01 \\
+OS Scan           & 0.90 & 0.96  & 0.10 & 0.04 \\
+SSDP Flood        & 0.88 & 0.99  & 0.12 & 0.01 \\
+SSL Renegotiation & 0.92 & 0.96  & 0.08 & 0.08 \\
+ARP MiTM          & 0.96 & 0.96  & 0.04 & 0.02 \\
+SYN DoS           & 0.89 & 0.95  & 0.11 & 0.09 \\
+Video Injection   & 0.93 & 0.95  & 0.07 & 0.05 \\
+Fuzzing           & 0.85 & 0.91  & 0.15 & 0.11 \\
+Active Wiretap    & 0.87 & 0.93  & 0.13 & 0.05 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Matched attacks.} Four attacks appear in \emph{both} datasets. Table~\ref{tab:matched}
+puts Tenko's AUC side by side. The floods and ARP-spoofing are in the same ballpark (SYN DoS is
+actually better on CICIoT2023); the one real divergence is \textbf{OS Scan}.
+
+\begin{table}[t]
+\centering
+\caption{Matched-attack Tenko AUC: paper's Kitsune dataset vs CICIoT2023 (both full-trace,
+threshold-independent). Positive $\Delta$ means CICIoT2023 is better.}
+\label{tab:matched}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Attack (matched)} & \textbf{AUC (Kitsune ds)} & \textbf{AUC (CICIoT2023)} & \textbf{$\Delta$} \\
+\midrule
+SYN DoS $\leftrightarrow$ DoS-SYN        & 0.95  & 0.988 & $+0.038$ \ (better) \\
+ARP MITM $\leftrightarrow$ MITM-Arp      & 0.96  & 0.949 & $-0.011$ \ ($\approx$ equal) \\
+Mirai $\leftrightarrow$ Mirai-greeth     & 0.996 & 0.937 & $-0.059$ \ (mildly worse) \\
+OS Scan $\leftrightarrow$ Recon-OSScan   & 0.96  & 0.796 & $-0.164$ \ (worse) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Why OS Scan diverges.} The Mirsky ``OS Scan'' is an aggressive, well-separated scan
+(AUC $0.96$); CICIoT2023 ``Recon-OSScan'' reconnaissance overlaps benign traffic far more, so the
+same name denotes materially harder traffic (AUC $0.796$). This is a traffic-character difference,
+not a metric error, and it is consistent with the paper's thesis (benign-overlapping traffic is
+hard).
+
+\paragraph{Verdict --- qualified yes.} CICIoT2023 is \textbf{consistent with the paper's
+reliable-vs-degraded story}:
+\begin{itemize}
+  \item \textbf{Sustained-deviation attacks stay strong}: DoS-SYN (AUC $0.988$), DDoS ($0.929$),
+        MITM ($0.949$), Mirai ($0.937$).
+  \item \textbf{Benign-overlapping / low-rate attacks stay weak}: Recon-OSScan ($0.796$) and
+        Dictionary Brute Force ($0.697$) --- low AUC is a genuine separability limit.
+  \item \textbf{The node-aggregation edge reproduces} on exactly the two entity/sustained attacks it
+        targets (MITM $+0.007$, Mirai $+0.008$ AUC over Kitsune).
+\end{itemize}
+The qualification: on CICIoT2023 Tenko is \textbf{not uniformly superior} to Kitsune ($2/6$ AUC wins
+here vs $9/9$ on the Kitsune dataset); on pure volumetric floods a well-thresholded per-packet
+detector is already near-ceiling and aggregation adds little. Combined with the per-deployment
+$\eta$ recalibration, the weaker OS-Scan/recon, the harder benign regime (uniformly higher EER), the
+$6$-attack pilot scope, and the FPR non-transfer, the honest summary is a \textbf{qualified yes}:
+Tenko generalizes to a recent dataset in the way the mechanism predicts, and we should report it
+that way rather than as a blanket win.
+
+\subsection{Unified view: Tenko across all datasets in the paper}
+\label{sec:alldata}
+
+Table~\ref{tab:alldata} consolidates \emph{every} corpus for which the manuscript (or this pilot)
+carries usable Tenko numbers. Granularity and reported metrics differ by dataset --- per-attack,
+per-device, or a single mixed-attack regime --- so we surface exactly what exists and aggregate AUC
+\textbf{only} over the values we actually extracted (the $n$ column states how many). Two datasets
+carry no AUC we could use and are therefore \emph{excluded from the AUC aggregates}, not fabricated:
+\textbf{N-BaIoT} appears only as a per-device F1/TPR/FPR table that is \emph{commented out} in the
+current draft (supervised Hermes vs.\ benign-only Tenko; no AUC/EER), and \textbf{CIC-IDS2018} has
+\emph{no results table} in the manuscript at all (it is named only in setup/roadmap discussion). The
+one extra active Tenko number beyond the two per-attack panels is the \emph{Kitsune combined-attack}
+trace under a Mateen-style sustained-distribution-shift stress (\srcpath{tab:mateen_comparative_performance}),
+where Tenko scores a single AUC--ROC of $0.607$ against fully adaptive baselines (Mateen $0.722$,
+OWAD $0.710$, INSOMNIA $0.473$, reproduced from prior work).
+
+\textbf{Caveat (read before the table).} AUC across datasets is \emph{not} a controlled comparison:
+the traffic, thresholds, class granularity, and --- for the Mateen regime --- an explicit
+distribution-shift stress all differ. Table~\ref{tab:alldata} is a \emph{generalization overview},
+not a ranking; the only genuinely matched, like-for-like axis is the per-attack alignment in
+Table~\ref{tab:align}.
+
+\begin{table}[t]
+\centering
+\footnotesize
+\caption{Tenko across all datasets with usable numbers in the paper (plus this CICIoT2023 pilot).
+AUC aggregates are mean~[min--max] over the $n$ extracted per-class/per-regime values only. This is a
+generalization overview across heterogeneous protocols, \emph{not} a controlled ranking.}
+\label{tab:alldata}
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.2cm} c >{\raggedright\arraybackslash}p{1.95cm} c >{\raggedright\arraybackslash}p{1.95cm} >{\raggedright\arraybackslash}p{1.95cm} Y@{}}
+\toprule
+\textbf{Dataset} & \textbf{Year} & \textbf{Granularity} & \textbf{$n$} & \textbf{Tenko AUC mean [min--max]} & \textbf{Baseline AUC mean [min--max]} & \textbf{Notes / source} \\
+\midrule
+Kitsune (Mirsky) & 2018 & per-attack & 9 & 0.956 [0.91--0.996] & 0.906 [0.85--0.96] & Active; \srcpath{tab:kitsune-tenko-new-highlighted}. Baseline $=$ Kitsune; Tenko $\ge$ Kitsune on all 9. \\
+CICIoT2023 (this work) & 2023 & per-attack & 6 & 0.883 [0.70--0.988] & 0.893 [0.70--0.993] & \srcpath{ciciot2023_per_class_metrics.csv}. Baseline $=$ Kitsune; Tenko $>$ Kitsune on MITM, Mirai. \\
+Kitsune combined-attack (shift stress) & 2018 & single mixed regime & 1 & 0.607 & 0.722 (Mateen) & AUC--ROC; \srcpath{tab:mateen_comparative_performance}. Adaptive baselines: OWAD 0.710, INSOMNIA 0.473. \\
+N-BaIoT & 2018 & per-device & 9 & --- & --- & F1/TPR/FPR only, \textbf{commented-out} in draft; Tenko F1 $0.67$--$0.88$ vs supervised Hermes. No AUC $\Rightarrow$ excluded. \\
+CIC-IDS2018 & 2018 & --- & --- & --- & --- & \textbf{No results table} in manuscript $\Rightarrow$ excluded. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The matched per-attack alignment (the fair axis) is repeated here for convenience
+(Table~\ref{tab:align}): four attacks recur across the Kitsune dataset and CICIoT2023.
+
+\begin{table}[t]
+\centering
+\small
+\caption{Matched per-attack alignment: Tenko AUC on the Kitsune dataset vs CICIoT2023 (both
+full-trace, threshold-independent). Positive $\Delta$ means CICIoT2023 is better. This is the only
+directly comparable, same-attack axis across the two per-attack datasets.}
+\label{tab:align}
+\begin{tabular}{lccc}
+\toprule
+\textbf{Attack (matched)} & \textbf{Tenko AUC (Kitsune ds)} & \textbf{Tenko AUC (CICIoT2023)} & \textbf{$\Delta$AUC} \\
+\midrule
+SYN DoS $\leftrightarrow$ DoS-SYN        & 0.95  & 0.988 & $+0.038$ \\
+ARP MITM $\leftrightarrow$ MITM-Arp      & 0.96  & 0.949 & $-0.011$ \\
+Mirai $\leftrightarrow$ Mirai-greeth     & 0.996 & 0.937 & $-0.059$ \\
+OS Scan $\leftrightarrow$ Recon-OSScan   & 0.96  & 0.796 & $-0.164$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Reading the two tables together: Tenko's \emph{per-attack} discrimination is in the same band on both
+per-attack datasets (mean AUC $0.956$ on Kitsune, $0.883$ on CICIoT2023, the gap driven almost
+entirely by the harder OS-Scan/recon and brute-force classes), and the matched attacks agree within
+$\pm 0.06$ except OS~Scan. The low $0.607$ AUC--ROC on the Mateen combined-attack shift regime is
+\emph{expected and on-message}: it is a deliberate stress test in which Tenko is designed to degrade
+conservatively rather than adapt, so it trails the fully adaptive drift baselines there while staying
+strong on the stationary per-attack evaluations.
+
+% ===========================================================================
+\section{Honest limitations and talking points for colleagues}
+\label{sec:limits}
+
+\begin{itemize}
+  \item \textbf{``Tenko doesn't beat Kitsune everywhere on CICIoT2023.''} Correct, and expected: the
+        contribution is node aggregation for sustained/entity-conditioned attacks; that is exactly
+        where it wins here (MITM, Mirai). On pure floods per-packet RMSE is already near-ceiling.
+        We should frame CICIoT2023 as a \emph{generalization} result, not a dominance claim.
+  \item \textbf{``The published $\eta$ values didn't work.''} True --- $\eta=50/20$ is degenerate on
+        this benign geometry. But this \emph{supports} the paper's own framing of $\eta$ as a
+        per-deployment benign multiplier; we recalibrated using benign traffic only, no attack
+        labels. Prepared answer: report the recalibration procedure explicitly.
+  \item \textbf{``Your operating-point FPR is definitional.''} Acknowledged in the report: we fit and
+        measured FPR on the same benign slice. The out-of-sample test shows the FPR does not transfer
+        ($\approx 0\%$ vs $\approx 30\%$). Prepared answer: headline threshold-independent AUC/EER;
+        present the operating point clearly labelled as in-sample.
+  \item \textbf{``Kitsune's FPR is $32\%$ --- unfair comparison.''} The Kitsune baseline uses a
+        Median$+$MAD threshold that lands at $\approx 0.3233$ FPR; the two systems are therefore not
+        at a matched FPR. We compare them on \emph{threshold-independent} AUC/EER, which is immune to
+        this.
+  \item \textbf{``OS Scan looks much worse than in the paper.''} Different traffic under the same
+        name: CICIoT2023 reconnaissance overlaps benign more. Prepared answer: state this explicitly
+        and lean on the AUC being a separability statement.
+  \item \textbf{``It's only a pilot.''} Yes --- $150$k benign lead $+$ $30$k benign test $+$ $50$k per
+        attack, six classes. Scaling to more classes / more packets is future work; the pilot already
+        exercises the full X1--X4 path on real per-packet source IPs.
+  \item \textbf{Double-$\tanh$.} Redundant in the released code; it barely moves AUC ($\le 0.011$) but
+        does affect the operating point. The main-paper numbers were generated under it, so they
+        stand and are described accurately; new CICIoT2023 runs use the single-$\tanh$ normalization.
+\end{itemize}
+
+% ===========================================================================
+\appendix
+\section{Provenance of every key number}
+\label{sec:prov}
+
+Every figure above is traceable to a committed artifact under \texttt{results/CICIoT2023/} or to a
+verified companion memo (\texttt{experiment\_story.md}, \texttt{cross\_dataset\_comparison.md},
+\texttt{manuscript\_drafts.md}). Table~\ref{tab:prov} maps the load-bearing numbers to their source.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\caption{Provenance map. CSV row numbers are 1-based including the header.}
+\label{tab:prov}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{4.6cm} Y >{\raggedright\arraybackslash}p{2.5cm}}
+\toprule
+\textbf{Claim} & \textbf{Source file : location} & \textbf{Value} \\
+\midrule
+Stream layout $150$k/$30$k/$50$k $=230$k; \texttt{benignLimit}$=150$k
+  & \srcpath{stream_counts.csv:2-7}; \srcpath{build_streams_ciciot2023.sh:21-23}
+  & as tabled \\
+benign\_test $=$ pkts $150{,}001$--$180{,}000$, same trace
+  & \srcpath{build_streams_ciciot2023.sh:47-53}
+  & 30{,}000 \\
+tshark source-IP column $4$ (IPv4) / $17$ (IPv6)
+  & \srcpath{pcap2tsv_tenko.sh:4-9}
+  & --- \\
+Committed $\eta$ degenerate (TPR$=$FPR$=0$, all classes)
+  & \srcpath{ciciot2023_committedEta_double.csv:3,5,7,9,11,13}
+  & $0/0$ \\
+Recalibrated $\eta$ @1\% / @5\%
+  & \srcpath{ciciot2023_metrics_recalibrated.csv:2,3}
+  & 40.699/2.854 ; 35.834/2.207 \\
+Double-$\tanh$ location
+  & \srcpath{example.py:157} $+$ \srcpath{results.py:805}
+  & $\tanh(\tanh(\cdot))$ \\
+Single$-$double AUC $\le 0.011$ (Dict max $+0.010911$)
+  & \srcpath{ciciot2023_tanh_impact.csv:2-7}
+  & $\le 0.011$ \\
+Full-trace AUC/EER (Kitsune \& Tenko)
+  & \srcpath{ciciot2023_per_class_metrics.csv:2,3,6,7,10,11,14,15,18,19,22,23}
+  & Table~\ref{tab:auc} \\
+Operating point @5\% (in-sample)
+  & \srcpath{ciciot2023_per_class_metrics.csv:5,17,4,21,13,25}
+  & Table~\ref{tab:op} \\
+Kitsune constant FPR $\approx 0.3233$
+  & \srcpath{ciciot2023_per_class_metrics.csv} (Kitsune \texttt{FPR} col)
+  & 0.323333 \\
+OOS held-out FPR $0\%$ / $\approx 30\%$
+  & \srcpath{ciciot2023_metrics_recalibrated_oos.csv:2-5} (\srcpath{heldout_benign_fpr})
+  & 0.0 / 0.304 / 0.319 \\
+Paper Kitsune-dataset AUC/EER (9 attacks)
+  & manuscript \srcpath{tab:kitsune-tenko-new-highlighted}
+  & Table~\ref{tab:paper-auc} \\
+Matched-attack $\Delta$AUC
+  & \srcpath{cross_dataset_comparison.md} (\S2b)
+  & Table~\ref{tab:matched} \\
+Raw corpus $\approx 548$\,GB; pilot target $\approx 100$--$150$\,MB
+  & \srcpath{TENKO_R2_REVISION_ROADMAP.md:78}
+  & --- \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\bigskip
+\noindent\textbf{Compile note.} This document is self-contained (no external figures or
+bibliography) and builds with \texttt{pdflatex cic\_experiment\_report.tex} (or
+\texttt{tectonic cic\_experiment\_report.tex}).
+
+\end{document}

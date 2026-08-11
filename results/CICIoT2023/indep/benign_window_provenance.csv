@@ -1,0 +1,7 @@
+attack,benign_src,offset_start_1based,offset_end_1based,n_benign,n_attack,n_total,benignLimit
+DDoS-UDP_Flood,BenignTraffic.pcap,1,120000,120000,50000,170000,60000
+DoS-SYN_Flood,BenignTraffic.pcap,600001,720000,120000,50000,170000,60000
+Recon-OSScan,BenignTraffic1.pcap,1,120000,120000,50000,170000,60000
+MITM-ArpSpoofing,BenignTraffic1.pcap,600001,720000,120000,50000,170000,60000
+Mirai-greeth_flood,BenignTraffic2.pcap,1,120000,120000,50000,170000,60000
+DictionaryBruteForce,BenignTraffic3.pcap,1,120000,120000,50000,170000,60000

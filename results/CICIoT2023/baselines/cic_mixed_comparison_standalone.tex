@@ -1,0 +1,24 @@
+% Overleaf / local entry point for the mixed CICIoT2023 comparison fragment.
+% Set this file as the main document. It uses the standard article class and
+% does NOT load the caption package (article provides \caption natively), so
+% it should not emit caption's "Unknown document class" warning.
+%
+% Build: tectonic cic_mixed_comparison_standalone.tex
+%   or pdflatex / Overleaf with this file as the root.
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+
+\title{Mixed-attack CICIoT2023 comparison}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\input{cic_mixed_comparison.tex}
+
+\end{document}

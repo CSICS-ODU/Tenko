@@ -1,0 +1,5 @@
+stream,detector,auc_roc,n_curve_points
+mixed,tenko,0.989682,367
+mixed,kitsune,0.973251,657
+MITM-ArpSpoofing,tenko,0.949187,185
+MITM-ArpSpoofing,kitsune,0.942003,250
