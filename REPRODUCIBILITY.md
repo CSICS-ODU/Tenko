@@ -3,7 +3,7 @@
 **Branch:** `public-release` (base: `correct-latency`).
 **Purpose:** map every figure/table in the manuscript to the *script → input data → output CSV* that regenerates it, with exact commands, so a suspicious reviewer can reproduce the numbers from committed code + data.
 
-> **Scope note.** This branch consolidates the **CICIoT2023 revision** (the new, headline recent-dataset work: mixed-stream binary comparison, per-class AUC/EER, baselines, operating-point and out-of-sample analyses, and the RMSE/ROC figures) **plus** the revision artifacts that answer the reviewer blockers: the **t-SNE separation figure** (§4), a measured **latency/throughput** table (§9), a **seed-robustness** study (§10), the **N-BaIoT Table V** rebuild (§11), and the **9-attack Kitsune** table (Mirai verified end-to-end; the other 8 attacks need public captures the maintainer must supply — §11). Data provenance and what still needs external data are documented in `results/DATA_LOCATION_REPORT.md`.
+> **Scope note.** This branch consolidates the **CICIoT2023 revision** (the new, headline recent-dataset work: mixed-stream binary comparison, per-class AUC/EER, baselines, operating-point and out-of-sample analyses, and the RMSE/ROC figures) **plus** the revision artifacts that answer the reviewer blockers: the **t-SNE separation figure** (§4), a measured **latency/throughput** table (§9), a **seed-robustness** study (§10), the **N-BaIoT Table V** rebuild (§11), and the **9-attack Kitsune** table (all 9 attacks rebuilt end-to-end from the public UCI Kitsune archive — §11). Data provenance is documented in `results/DATA_LOCATION_REPORT.md`.
 
 ---
 
@@ -271,7 +271,7 @@ at several operating points. Confirms the result is not seed-cherry-picked.
 | Blocker | Table | Script | Output CSV | Status |
 |---|---|---|---|---|
 | **B3** | N-BaIoT per-device/per-attack (Table V) | `results/nbaiot/run_nbaiot_tableV.py` | `results/nbaiot/nbaiot_tableV_metrics.csv` | **Rebuilt from raw data** (80 rows). See `results/nbaiot/MEMO.md`; verification vs. recovered original in `nbaiot_verification_vs_recovered.csv`. |
-| **B2** | 9-attack Kitsune main table | `results/main9attack/run_kitsune_9attack.py` | `results/main9attack/kitsune_9attack_metrics.csv` | **Mirai verified** end-to-end vs. paper (`mirai_verification_vs_paper.csv`); paper literals in `paper_literals_resultsNew.csv`. **Other 8 attacks pending** public Kitsune captures — see `results/DATA_LOCATION_REPORT.md`. |
+| **B2** | 9-attack Kitsune main table | `results/main9attack/run_kitsune_9attack.py` | `results/main9attack/kitsune_9attack_metrics.csv` | **All 9 attacks rebuilt** from the public UCI Kitsune archive (id=516) via `results/main9attack/rebuild_8attacks.sh` (+ `verify_vs_paper.py`); raw captures/feature CSVs are gitignored under `results/main9attack/data/`. See `results/DATA_LOCATION_REPORT.md`. |
 
 ### N-BaIoT provenance note (KitNET_improved)
 The original published Table V was produced by an external driver importing `KitNET.KitNET_improved`,
@@ -288,6 +288,8 @@ PY=.venv/bin/python
 $PY results/nbaiot/run_nbaiot_tableV.py --dataset ~/dataset/N-BaIoT \
     --output results/nbaiot/nbaiot_tableV_metrics.csv
 
-# 9-attack Kitsune — Mirai (needs the Mirai score stream / dataset; see DATA_LOCATION_REPORT.md)
-$PY results/main9attack/run_kitsune_9attack.py --help
+# 9-attack Kitsune — rebuild all 9 from the public UCI Kitsune archive (id=516).
+# Downloads/uses raw data under results/main9attack/data/ (gitignored), then verifies:
+bash results/main9attack/rebuild_8attacks.sh
+$PY results/main9attack/verify_vs_paper.py
 ```

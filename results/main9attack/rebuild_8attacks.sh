@@ -21,7 +21,7 @@
 #      AUC/EER) and append to kitsune_9attack_metrics.csv.
 set -euo pipefail
 
-ROOT="/Users/sbhola/Desktop/Tenko"
+ROOT="${TENKO_REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
 PY="$ROOT/.venv/bin/python"
 DIR="$ROOT/results/main9attack"
 DATA="$DIR/data"

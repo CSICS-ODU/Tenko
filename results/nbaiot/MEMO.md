@@ -42,8 +42,7 @@ Runtime ≈ **699 s (~11.7 min)**, ~7.06 M packets, single core. → **80 rows**
 | File | What |
 |---|---|
 | `nbaiot_tableV_metrics.csv` | **Rebuilt Table V** from raw data with committed code (80 rows, incl. AUC/EER). |
-| `nbaiot_tableV_recovered_original.csv` | The recovered external run (`NBAIOT_RESULTS_ALL.csv`), for provenance. |
-| `nbaiot_verification_vs_recovered.csv` | Row-by-row rebuilt-vs-original comparison. |
+| `nbaiot_verification_vs_recovered.csv` | Row-by-row rebuilt-vs-original comparison; carries the recovered external run (`NBAIOT_RESULTS_ALL.csv`) values as the `*_orig` columns, for provenance. |
 | `run_full.log` | Full run log (per-device thresholds + per-attack METRIC lines). |
 
 ## Verification vs the recovered original
