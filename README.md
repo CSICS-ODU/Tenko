@@ -54,6 +54,12 @@ CICIoT2023 driver:
 python run_ciciot2023.py --attacks all
 ```
 
+Regenerate CICIoT2023 RMSE timeline plots from committed CSVs:
+
+```bash
+python results/CICIoT2023/figs/plot_rmse_from_csv.py
+```
+
 # Datasets
 
 Organize downloaded data under this repository, then point the scripts at your local paths.
