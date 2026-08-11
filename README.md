@@ -60,6 +60,12 @@ Regenerate CICIoT2023 RMSE timeline plots from committed CSVs:
 python results/CICIoT2023/figs/plot_rmse_from_csv.py
 ```
 
+Regenerate Kitsune-dataset (OS Scan / SSDP) RMSE timelines from committed CSVs:
+
+```bash
+python results/main9attack/figs/plot_rmse_from_csv.py
+```
+
 # Datasets
 
 Organize downloaded data under this repository, then point the scripts at your local paths.

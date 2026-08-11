@@ -1,3 +1,4 @@
-# Large raw Kitsune (NDSS'18) captures / feature CSVs — do NOT commit.
-# Only the metrics CSVs, verification CSV, memo, and driver are public.
-data/
+# Large raw Kitsune (NDSS'18) captures / feature CSVs / score npz — do NOT commit.
+# Only the metrics CSVs, verification CSV, memo, driver, and figs/ CSV timelines are public.
+# Anchor to this directory so figs/data/ (committed plot CSVs) is not ignored.
+/data/

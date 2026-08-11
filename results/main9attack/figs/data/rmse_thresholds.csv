@@ -1,0 +1,3 @@
+attack,detector,mean_plus_3std,benign_cal_max,benign_cal_n,grace_packets
+OS Scan,kitsune_raw_rmse,0.35820597,0.46810339,1259658,55000
+SSDP Flood,kitsune_raw_rmse,1.0693688,1.3207218,2558442,55000

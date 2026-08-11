@@ -1080,6 +1080,22 @@ def main():
 	if not (len(RMSEs) == len(IPs) == len(LABELS)): print("[FATAL] Data length mismatch."); return
 	print(f"Label distribution:\n{pd.Series(LABELS).value_counts(normalize=True)}")
 
+	# Export downsampled RMSE timeline CSV for paper-figure regeneration
+	# (see results/main9attack/figs/plot_rmse_from_csv.py).
+	_csv_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+	                        "results", "main9attack", "figs", "data")
+	os.makedirs(_csv_dir, exist_ok=True)
+	_stem = os.path.splitext(os.path.basename(rmse_file))[0].replace("RMSEs_", "").replace("RMSEs", "run")
+	_csv_path = os.path.join(_csv_dir, f"rmse_timeline_{_stem}.csv")
+	_interval = 100
+	with open(_csv_path, "w", newline="") as _cf:
+		_w = csv.writer(_cf)
+		_w.writerow(["packet_index", "label", "rmse", "tanh_rmse"])
+		for _i in range(0, len(RMSEs), _interval):
+			_r = float(RMSEs[_i])
+			_w.writerow([_i, int(LABELS[_i]), f"{_r:.8g}", f"{float(np.tanh(_r)):.8g}"])
+	print(f"Wrote RMSE timeline CSV: {_csv_path} ({(len(RMSEs) + _interval - 1) // _interval} rows)")
+
 	# --- Run Weighted Pattern Detection ---
 	# ** NOTE: Choose weights and threshold based on validation results **
 	# Using defaults (equal weight, 0.5 threshold) is equivalent to OR ensemble
